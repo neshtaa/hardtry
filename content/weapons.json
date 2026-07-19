@@ -1,22 +1,26 @@
 [
   {
-    "id": "grenade",
-    "name": "Grenade",
-    "type": "projectile",
-    "damage": 50,
-    "radius": 40,
-    "speed": 300,
-    "ammo": 5,
-    "unlockRequirement": null
+    "id": "basic_cannon",
+    "name": "Basic Cannon",
+    "damage": 3,
+    "range": 200,
+    "projectileColor": "#ffcc00",
+    "explosionRadius": 30
   },
   {
-    "id": "laser",
-    "name": "Laser",
-    "type": "instant",
-    "damage": 35,
-    "radius": 10,
-    "speed": 0,
-    "ammo": 3,
-    "unlockRequirement": null
+    "id": "sniper_cannon",
+    "name": "Sniper Cannon",
+    "damage": 5,
+    "range": 400,
+    "projectileColor": "#ff4444",
+    "explosionRadius": 10
+  },
+  {
+    "id": "cluster_bomb",
+    "name": "Cluster Bomb",
+    "damage": 1,
+    "range": 150,
+    "projectileColor": "#ff8800",
+    "explosionRadius": 60
   }
 ]
