@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.health import router as health_router
 from app.api.echo import router as echo_router
+from app.api.content import router as content_router
 from app.config import Settings
 
 settings = Settings()
@@ -20,3 +21,4 @@ app.add_middleware(
 
 app.include_router(health_router, prefix="", tags=["health"])
 app.include_router(echo_router, prefix="", tags=["echo"])
+app.include_router(content_router, prefix="", tags=["content"])

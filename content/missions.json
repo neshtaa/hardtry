@@ -1,0 +1,10 @@
+[
+  {
+    "id": "demo",
+    "name": "First Battle",
+    "units": [
+      { "id": "player", "hp": 10, "weaponId": "basic_cannon", "x": 150, "y": 400, "color": "0x4488ff", "side": "player" },
+      { "id": "ai", "hp": 10, "weaponId": "basic_cannon", "x": 650, "y": 400, "color": "0xff4444", "side": "enemy" }
+    ]
+  }
+]

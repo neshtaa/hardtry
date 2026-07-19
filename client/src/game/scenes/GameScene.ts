@@ -8,6 +8,22 @@ interface WeaponDef {
   projectileColor: string;
 }
 
+interface UnitConfig {
+  id: string;
+  hp: number;
+  weaponId: string;
+  x: number;
+  y: number;
+  color: string;
+  side: "player" | "enemy";
+}
+
+interface MissionDef {
+  id: string;
+  name: string;
+  units: UnitConfig[];
+}
+
 interface SimpleUnitConfig {
   x: number;
   y: number;
@@ -77,20 +93,26 @@ export class GameScene extends Phaser.Scene {
   private isPlayerTurn: boolean = true;
   private isAnimating: boolean = false;
   private weaponMap: Map<string, WeaponDef> = new Map();
+  private mission!: MissionDef;
 
   constructor() {
     super({ key: 'GameScene' });
   }
 
   async create() {
-    // Show a loading indicator while we fetch weapon definitions
+    // Show a loading indicator while data loads
     const loadText = this.add
-      .text(400, 300, 'Loading weapons…', { fontSize: '18px', color: '#ffffff' })
+      .text(400, 300, 'Loading…', { fontSize: '18px', color: '#ffffff' })
       .setOrigin(0.5);
 
-    this.weaponMap = await this.loadWeapons();
+    const [weaponMap, missions] = await Promise.all([
+      this.loadWeapons(),
+      this.loadMissions(),
+    ]);
+    this.weaponMap = weaponMap;
+    this.mission = missions.length ? missions[0] : this.getFallbackMission();
 
-    // Clear the loading screen and build the game
+    // Clear loading screen and build the game
     this.children.removeAll(true);
     this.setupGame();
   }
@@ -123,29 +145,59 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  private async loadMissions(): Promise<MissionDef[]> {
+    const backendUrl = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
+    const url = `${backendUrl}/missions`;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) {
+        throw new Error(`Failed to fetch missions: ${res.statusText}`);
+      }
+      return await res.json();
+    } catch (err) {
+      console.warn('Could not reach backend – using fallback mission', err);
+      return [this.getFallbackMission()];
+    }
+  }
+
+  private getFallbackMission(): MissionDef {
+    return {
+      id: 'fallback_demo',
+      name: 'Fallback Demo',
+      units: [
+        { id: 'player', hp: 10, weaponId: 'basic_cannon', x: 150, y: 400, color: '0x4488ff', side: 'player' },
+        { id: 'ai', hp: 10, weaponId: 'basic_cannon', x: 650, y: 400, color: '0xff4444', side: 'enemy' },
+      ],
+    };
+  }
+
   private setupGame() {
     // Terrain
     this.createTerrain();
 
-    // Create units using weapon definitions (fallback to basic_cannon)
-    const wpnId = 'basic_cannon';
-    const baseDef = this.weaponMap.get(wpnId) || { damage: 3, projectileColor: '#ffcc00' };
+    // Find player and enemy unit configs from the mission
+    const playerCfg = this.mission.units.find((u) => u.side === 'player');
+    const aiCfg = this.mission.units.find((u) => u.side === 'enemy');
+
+    if (!playerCfg || !aiCfg) {
+      throw new Error('Mission must have exactly one player and one enemy unit');
+    }
 
     this.player = new SimpleUnit(this, {
-      x: 150,
-      y: 400,
-      hp: 10,
-      weaponId: wpnId,
-      color: 0x4488ff,
+      x: playerCfg.x,
+      y: playerCfg.y,
+      hp: playerCfg.hp,
+      weaponId: playerCfg.weaponId,
+      color: parseInt(playerCfg.color),
       name: 'Player',
     });
 
     this.ai = new SimpleUnit(this, {
-      x: 650,
-      y: 400,
-      hp: 10,
-      weaponId: wpnId,
-      color: 0xff4444,
+      x: aiCfg.x,
+      y: aiCfg.y,
+      hp: aiCfg.hp,
+      weaponId: aiCfg.weaponId,
+      color: parseInt(aiCfg.color),
       name: 'AI',
     });
 
