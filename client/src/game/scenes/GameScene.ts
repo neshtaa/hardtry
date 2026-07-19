@@ -79,6 +79,11 @@ class SimpleUnit {
     return this.hp > 0;
   }
 
+  setY(y: number) {
+    this.body.y = y;
+    this.drawHpBar();
+  }
+
   destroy() {
     this.body.destroy();
     this.hpBar.destroy();
@@ -94,13 +99,14 @@ export class GameScene extends Phaser.Scene {
   private isAnimating: boolean = false;
   private weaponMap: Map<string, WeaponDef> = new Map();
   private mission!: MissionDef;
+  private terrainHeights!: number[];
+  private terrainGraphics!: Phaser.GameObjects.Graphics;
 
   constructor() {
     super({ key: 'GameScene' });
   }
 
   async create() {
-    // Show a loading indicator while data loads
     const loadText = this.add
       .text(400, 300, 'Loading…', { fontSize: '18px', color: '#ffffff' })
       .setOrigin(0.5);
@@ -112,8 +118,11 @@ export class GameScene extends Phaser.Scene {
     this.weaponMap = weaponMap;
     this.mission = missions.length ? missions[0] : this.getFallbackMission();
 
-    // Clear loading screen and build the game
+    // Build initial terrain height map (flat + hills)
+    this.initTerrain();
+
     this.children.removeAll(true);
+    this.buildTerrain();
     this.setupGame();
   }
 
@@ -171,11 +180,73 @@ export class GameScene extends Phaser.Scene {
     };
   }
 
-  private setupGame() {
-    // Terrain
-    this.createTerrain();
+  private initTerrain(): void {
+    this.terrainHeights = new Array(800);
+    for (let x = 0; x < 800; x++) {
+      let h = 450; // base ground
+      // first hill (x: 200..399)
+      if (x >= 200 && x < 400) {
+        if (x <= 300) {
+          h = 450 - ((x - 200) / 100) * 70;
+        } else {
+          h = 450 - ((400 - x) / 100) * 70;
+        }
+      }
+      // second hill (x: 400..600)
+      if (x >= 400 && x <= 600) {
+        if (x <= 500) {
+          h = 450 - ((x - 400) / 100) * 70;
+        } else {
+          h = 450 - ((600 - x) / 100) * 70;
+        }
+      }
+      this.terrainHeights[x] = Math.max(0, Math.min(600, h));
+    }
+  }
 
-    // Find player and enemy unit configs from the mission
+  private buildTerrain(): void {
+    this.terrainGraphics = this.add.graphics();
+    this.redrawTerrain();
+  }
+
+  private redrawTerrain(): void {
+    this.terrainGraphics.clear();
+    this.terrainGraphics.fillStyle(0x446644);
+    for (let x = 0; x < 800; x++) {
+      const h = this.terrainHeights[x];
+      this.terrainGraphics.fillRect(x, h, 1, 600 - h);
+    }
+    // add slight colour variation for hills (optional – skip for now)
+  }
+
+  private destroyTerrain(cx: number, cy: number, radius: number = 30): void {
+    const minX = Math.max(0, Math.floor(cx - radius));
+    const maxX = Math.min(799, Math.ceil(cx + radius));
+    for (let x = minX; x <= maxX; x++) {
+      const dx = x - cx;
+      const dy = this.terrainHeights[x] - cy;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < radius) {
+        const craterY = cy + Math.sqrt(radius * radius - dx * dx);
+        if (craterY > this.terrainHeights[x]) {
+          this.terrainHeights[x] = Math.min(600, craterY);
+        }
+      }
+    }
+    this.redrawTerrain();
+  }
+
+  private applyGravity(unit: SimpleUnit): void {
+    const x = Math.round(unit.body.x);
+    if (x < 0 || x >= 800) return;
+    const groundY = this.terrainHeights[x];
+    const standY = groundY - 25; // half of unit height (50)
+    if (unit.body.y < standY) {
+      unit.setY(standY);
+    }
+  }
+
+  private setupGame() {
     const playerCfg = this.mission.units.find((u) => u.side === 'player');
     const aiCfg = this.mission.units.find((u) => u.side === 'enemy');
 
@@ -201,6 +272,12 @@ export class GameScene extends Phaser.Scene {
       name: 'AI',
     });
 
+    // Place units on terrain
+    const playerGround = this.terrainHeights[Math.round(playerCfg.x)];
+    const aiGround = this.terrainHeights[Math.round(aiCfg.x)];
+    this.player.setY(playerGround - 25);
+    this.ai.setY(aiGround - 25);
+
     // UI texts
     this.turnText = this.add
       .text(400, 60, '', { fontSize: '28px', color: '#ffffff' })
@@ -218,15 +295,6 @@ export class GameScene extends Phaser.Scene {
     });
 
     this.turnText.setText('Player Turn – press SPACE to fire');
-  }
-
-  private createTerrain() {
-    const terrain = this.add.graphics();
-    terrain.fillStyle(0x446644);
-    terrain.fillRect(0, 450, 800, 150);
-    terrain.fillStyle(0x557755);
-    terrain.fillTriangle(200, 450, 300, 380, 400, 450);
-    terrain.fillTriangle(400, 450, 500, 380, 600, 450);
   }
 
   private getWeaponDamage(weaponId: string): number {
@@ -291,8 +359,19 @@ export class GameScene extends Phaser.Scene {
       ease: 'Power2',
       onComplete: () => {
         projectile.destroy();
+        // Apply damage first
         to.takeDamage(damage);
         this.statusText.setText(`${from.name} dealt ${damage} damage`);
+
+        // Destructible terrain at impact point
+        const impactX = to.body.x;
+        const impactY = to.body.y - 25;
+        this.destroyTerrain(impactX, impactY);
+
+        // Both units fall after terrain change
+        this.applyGravity(this.player);
+        this.applyGravity(this.ai);
+
         onComplete();
       },
     });
