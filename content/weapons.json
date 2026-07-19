@@ -1,0 +1,22 @@
+[
+  {
+    "id": "grenade",
+    "name": "Grenade",
+    "type": "projectile",
+    "damage": 50,
+    "radius": 40,
+    "speed": 300,
+    "ammo": 5,
+    "unlockRequirement": null
+  },
+  {
+    "id": "laser",
+    "name": "Laser",
+    "type": "instant",
+    "damage": 35,
+    "radius": 10,
+    "speed": 0,
+    "ammo": 3,
+    "unlockRequirement": null
+  }
+]

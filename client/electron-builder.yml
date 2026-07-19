@@ -1,0 +1,18 @@
+appId: com.wormix-like.client
+productName: Wormix-Like
+directories:
+  output: release
+files:
+  - dist/**/*
+  - src/**/*
+  - package.json
+win:
+  target:
+    - nsis
+  icon: null
+mac:
+  target:
+    - dmg
+linux:
+  target:
+    - AppImage

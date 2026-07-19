@@ -1,0 +1,18 @@
+[
+  {
+    "id": "soldier",
+    "name": "Soldier",
+    "hp": 100,
+    "weaponSlots": ["grenade", "laser"],
+    "movementRange": 3,
+    "abilities": []
+  },
+  {
+    "id": "bot_enemy",
+    "name": "Enemy Bot",
+    "hp": 80,
+    "weaponSlots": ["grenade"],
+    "movementRange": 2,
+    "abilities": []
+  }
+]

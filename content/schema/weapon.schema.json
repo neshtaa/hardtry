@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "WeaponDef",
+  "type": "object",
+  "properties": {
+    "id": { "type": "string" },
+    "name": { "type": "string" },
+    "type": { "type": "string", "enum": ["projectile", "instant", "beam"] },
+    "damage": { "type": "integer", "minimum": 0 },
+    "radius": { "type": "integer", "minimum": 0 },
+    "speed": { "type": "integer", "minimum": 0 },
+    "ammo": { "type": "integer", "minimum": 0 },
+    "unlockRequirement": { "type": ["string", "null"] }
+  },
+  "required": ["id", "name", "type", "damage", "radius", "speed", "ammo"]
+}

@@ -1,12 +1,14 @@
-# Full-Stack Starter
+# Wormix‑Like – 2D Turn‑Based Artillery Game
 
-Minimal production-minded starter with a FastAPI backend and a React (Vite) frontend.
+## Overview
+
+Original 2D turn‑based artillery game built with Electron + Phaser (desktop client) and FastAPI (backend). Content‑first architecture with structured data files.
 
 ## Prerequisites
 
-- Python 3.11+
 - Node.js 20+
-- npm or yarn
+- Python 3.11+
+- Docker (optional for containerized setup)
 
 ## Setup
 

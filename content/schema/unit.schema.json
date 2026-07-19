@@ -1,0 +1,14 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "UnitDef",
+  "type": "object",
+  "properties": {
+    "id": { "type": "string" },
+    "name": { "type": "string" },
+    "hp": { "type": "integer", "minimum": 1 },
+    "weaponSlots": { "type": "array", "items": { "type": "string" } },
+    "movementRange": { "type": "integer", "minimum": 0 },
+    "abilities": { "type": "array", "items": { "type": "string" } }
+  },
+  "required": ["id", "name", "hp", "weaponSlots", "movementRange"]
+}

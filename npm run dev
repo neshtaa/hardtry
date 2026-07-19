@@ -1,5 +1,3 @@
 
-The frontend runs on `http://localhost:5173` and proxies `/api` to the backend.
-
-## Run Tests
+### Docker (optional)
 
