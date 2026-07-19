@@ -4,7 +4,15 @@
     "name": "First Battle",
     "units": [
       { "id": "player", "hp": 10, "weaponId": "basic_cannon", "x": 150, "y": 400, "color": "0x4488ff", "side": "player" },
-      { "id": "ai", "hp": 10, "weaponId": "basic_cannon", "x": 650, "y": 400, "color": "0xff4444", "side": "enemy" }
+      { "id": "ai", "hp": 10, "weaponId": "cluster_bomb", "x": 650, "y": 400, "color": "0xff4444", "side": "enemy" }
+    ]
+  },
+  {
+    "id": "second_demo",
+    "name": "Second Battle",
+    "units": [
+      { "id": "player", "hp": 12, "weaponId": "sniper_cannon", "x": 150, "y": 400, "color": "0x4488ff", "side": "player" },
+      { "id": "ai", "hp": 15, "weaponId": "basic_cannon", "x": 650, "y": 400, "color": "0xff4444", "side": "enemy" }
     ]
   }
 ]

@@ -6,6 +6,7 @@ interface WeaponDef {
   damage: number;
   range: number;
   projectileColor: string;
+  explosionRadius: number;
 }
 
 interface UnitConfig {
@@ -98,9 +99,12 @@ export class GameScene extends Phaser.Scene {
   private isPlayerTurn: boolean = true;
   private isAnimating: boolean = false;
   private weaponMap: Map<string, WeaponDef> = new Map();
+  private missionList: MissionDef[] = [];
+  private currentMissionIndex: number = 0;
   private mission!: MissionDef;
   private terrainHeights!: number[];
   private terrainGraphics!: Phaser.GameObjects.Graphics;
+  private missionNameText!: Phaser.GameObjects.Text;
 
   constructor() {
     super({ key: 'GameScene' });
@@ -116,7 +120,9 @@ export class GameScene extends Phaser.Scene {
       this.loadMissions(),
     ]);
     this.weaponMap = weaponMap;
-    this.mission = missions.length ? missions[0] : this.getFallbackMission();
+    this.missionList = missions.length ? missions : [this.getFallbackMission()];
+    this.currentMissionIndex = 0;
+    this.mission = this.missionList[this.currentMissionIndex];
 
     // Build initial terrain height map (flat + hills)
     this.initTerrain();
@@ -141,7 +147,7 @@ export class GameScene extends Phaser.Scene {
       }
       return map;
     } catch (err) {
-      console.warn('Could not reach backend – using fallback weapon definition', err);
+      console.warn('Could not reach backend – using fallback weapon definitions', err);
       const map = new Map<string, WeaponDef>();
       map.set('basic_cannon', {
         id: 'basic_cannon',
@@ -149,6 +155,23 @@ export class GameScene extends Phaser.Scene {
         damage: 3,
         range: 200,
         projectileColor: '#ffcc00',
+        explosionRadius: 30,
+      });
+      map.set('sniper_cannon', {
+        id: 'sniper_cannon',
+        name: 'Sniper Cannon',
+        damage: 5,
+        range: 400,
+        projectileColor: '#ff4444',
+        explosionRadius: 10,
+      });
+      map.set('cluster_bomb', {
+        id: 'cluster_bomb',
+        name: 'Cluster Bomb',
+        damage: 1,
+        range: 150,
+        projectileColor: '#ff8800',
+        explosionRadius: 60,
       });
       return map;
     }
@@ -164,8 +187,8 @@ export class GameScene extends Phaser.Scene {
       }
       return await res.json();
     } catch (err) {
-      console.warn('Could not reach backend – using fallback mission', err);
-      return [this.getFallbackMission()];
+      console.warn('Could not reach backend – using fallback mission list', err);
+      return [this.getFallbackMission(), this.getSecondMission()];
     }
   }
 
@@ -175,7 +198,18 @@ export class GameScene extends Phaser.Scene {
       name: 'Fallback Demo',
       units: [
         { id: 'player', hp: 10, weaponId: 'basic_cannon', x: 150, y: 400, color: '0x4488ff', side: 'player' },
-        { id: 'ai', hp: 10, weaponId: 'basic_cannon', x: 650, y: 400, color: '0xff4444', side: 'enemy' },
+        { id: 'ai', hp: 10, weaponId: 'cluster_bomb', x: 650, y: 400, color: '0xff4444', side: 'enemy' },
+      ],
+    };
+  }
+
+  private getSecondMission(): MissionDef {
+    return {
+      id: 'second_demo',
+      name: 'Second Battle',
+      units: [
+        { id: 'player', hp: 12, weaponId: 'sniper_cannon', x: 150, y: 400, color: '0x4488ff', side: 'player' },
+        { id: 'ai', hp: 15, weaponId: 'basic_cannon', x: 650, y: 400, color: '0xff4444', side: 'enemy' },
       ],
     };
   }
@@ -278,6 +312,10 @@ export class GameScene extends Phaser.Scene {
     this.ai.setY(aiGround - 25);
 
     // UI texts
+    this.missionNameText = this.add
+      .text(400, 20, this.mission.name, { fontSize: '20px', color: '#cccccc' })
+      .setOrigin(0.5);
+
     this.turnText = this.add
       .text(400, 60, '', { fontSize: '28px', color: '#ffffff' })
       .setOrigin(0.5);
@@ -296,13 +334,17 @@ export class GameScene extends Phaser.Scene {
     this.turnText.setText('Player Turn – press SPACE to fire');
   }
 
+  private getWeaponDef(id: string): WeaponDef | undefined {
+    return this.weaponMap.get(id);
+  }
+
   private getWeaponDamage(weaponId: string): number {
-    const w = this.weaponMap.get(weaponId);
+    const w = this.getWeaponDef(weaponId);
     return w ? w.damage : 3;
   }
 
   private getProjectileColor(weaponId: string): number {
-    const w = this.weaponMap.get(weaponId);
+    const w = this.getWeaponDef(weaponId);
     const colorStr = w ? w.projectileColor : '#ffcc00';
     return Phaser.Display.Color.HexStringToColor(colorStr).color;
   }
@@ -390,6 +432,8 @@ export class GameScene extends Phaser.Scene {
     targetY?: number,
   ) {
     const color = this.getProjectileColor(from.weaponId);
+    const weaponDef = this.getWeaponDef(from.weaponId);
+    const explosionRadius = weaponDef ? weaponDef.explosionRadius : 30;
     const projectile = this.add.circle(from.body.x, from.body.y - 25, 6, color);
     const destX = targetX !== undefined ? targetX : to.body.x;
     const destY = targetY !== undefined ? targetY : to.body.y - 25;
@@ -405,8 +449,8 @@ export class GameScene extends Phaser.Scene {
         to.takeDamage(damage);
         this.statusText.setText(`${from.name} dealt ${damage} damage`);
 
-        // Destructible terrain at impact point
-        this.destroyTerrain(destX, destY);
+        // Destructible terrain at impact point – radius driven by weapon definition
+        this.destroyTerrain(destX, destY, explosionRadius);
 
         // Both units fall after terrain change
         this.applyGravity(this.player);
@@ -421,9 +465,41 @@ export class GameScene extends Phaser.Scene {
     this.isAnimating = true;
     this.isPlayerTurn = false;
     this.turnText.setText(message);
-    this.statusText.setText('Press R to restart');
+
+    const hasNext = this.currentMissionIndex + 1 < this.missionList.length;
+    const restartText = 'R to restart';
+    const nextText = hasNext ? ' | N for next mission' : '';
+    this.statusText.setText(`${restartText}${nextText}`);
+
+    // Handle restart (R key)
     this.input.keyboard!.on('keydown-R', () => {
       this.scene.restart();
     });
+
+    // Handle next mission (N key) – only if available
+    if (hasNext) {
+      this.input.keyboard!.on('keydown-N', () => {
+        this.currentMissionIndex++;
+        this.scene.restart();
+      });
+    }
+  }
+
+  /**
+   * Override init to propagate currentMissionIndex on scene restart.
+   * This ensures the scene uses the correct mission after restart/next.
+   */
+  init(data?: { missionIndex?: number }) {
+    if (data && data.missionIndex !== undefined) {
+      this.currentMissionIndex = data.missionIndex;
+    }
+  }
+
+  /**
+   * Override scene.restart() to pass the current mission index.
+   * We do this by overriding the default restart method.
+   */
+  restart() {
+    this.scene.restart({ missionIndex: this.currentMissionIndex });
   }
 }

@@ -7,4 +7,5 @@ The desktop client cannot be run inside Docker (requires a display server).
 - The backend includes CORS middleware configured to allow all origins during development.
 - The desktop client communicates directly with the game’s Phaser engine; no HTTP calls to the backend are used in the current vertical slice.
 - Health check endpoint: `GET /health` returns `{"status": "ok"}`.
-- The AI opponent selects a target (the player) and fires its equipped weapon (loaded from mission data). Its aim is currently deterministic (centre of the target). The AI logic is isolated in dedicated helper methods `getAITargets` and `getAIAimPoint`, making it straightforward to extend with different behaviours, difficulty levels, or multiple enemies.
+- The AI opponent selects a target (the player) and fires its equipped weapon (loaded from mission data). Its aim is currently deterministic (centre of the target).
+- Multiple missions can be defined in `content/missions.json`. After winning or losing, press **R** to replay the current mission or **N** to advance to the next mission (if available).
