@@ -41,12 +41,14 @@ Original 2D turn‑based artillery game built with Electron + Phaser (desktop cl
 
    The API will be available at `http://localhost:8000`.
 
-### Frontend (React + Vite)
+### Frontend (Electron + Phaser Client) – *Desktop‑only*
 
-1. Navigate to the `frontend/` directory:
+The game client is a standalone Electron application using Phaser for rendering.
+
+1. Navigate to the `client/` directory:
 
    ```bash
-   cd frontend
+   cd client
    ```
 
 2. Install dependencies:
@@ -55,15 +57,17 @@ Original 2D turn‑based artillery game built with Electron + Phaser (desktop cl
    npm install
    ```
 
-3. Start the development server:
+3. Start the development server (Vite + Electron):
 
    ```bash
    npm run dev
    ```
 
-   The UI will be available at `http://localhost:5173`.
+   This runs Vite on port `5173` and launches an Electron window that loads the game.
 
-### Docker (Alternative)
+   The game is ready when you see the title screen: **Player Turn – press SPACE to fire**.
 
-For containerized development, run:
+### Docker (Alternative – Backend only)
+
+For containerized development of the backend, run:
 
