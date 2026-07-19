@@ -65,7 +65,9 @@ The game client is a standalone Electron application using Phaser for rendering.
 
    This runs Vite on port `5173` and launches an Electron window that loads the game.
 
-   The game is ready when you see the title screen: **Player Turn – press SPACE to fire**.
+   The game starts with a **mission selection screen**. Press the number key (1, 2, …) to choose a mission.  
+   After selecting, press **SPACE** to start the battle. During a battle, press **SPACE** to fire.  
+   After winning or losing, you can press **R** to replay, **N** to advance to the next mission (if available), or **M** to return to the mission menu.
 
 ### Docker (Alternative – Backend only)
 

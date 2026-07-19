@@ -1,5 +1,7 @@
 import Phaser from 'phaser';
 
+// ---- Interfaces -------------------------------------------------------------
+
 interface WeaponDef {
   id: string;
   name: string;
@@ -26,7 +28,7 @@ interface UnitConfig {
   x: number;
   y: number;
   color?: string;
-  side: "player" | "enemy";
+  side: 'player' | 'enemy';
 }
 
 interface MissionDef {
@@ -42,7 +44,10 @@ interface SimpleUnitConfig {
   weaponId: string;
   color: number;
   name: string;
+  weaponName: string;
 }
+
+// ---- SimpleUnit class -------------------------------------------------------
 
 class SimpleUnit {
   scene: Phaser.Scene;
@@ -53,6 +58,7 @@ class SimpleUnit {
   weaponId: string;
   name: string;
   color: number;
+  weaponNameText: Phaser.GameObjects.Text;
 
   constructor(scene: Phaser.Scene, config: SimpleUnitConfig) {
     this.scene = scene;
@@ -63,8 +69,15 @@ class SimpleUnit {
     this.color = config.color;
 
     this.body = scene.add.rectangle(config.x, config.y, 40, 50, this.color);
+    this.body.setStrokeStyle(2, 0xffffff);
+
     this.hpBar = scene.add.graphics();
     this.drawHpBar();
+
+    this.weaponNameText = scene.add.text(config.x, config.y - 55, config.weaponName, {
+      fontSize: '12px',
+      color: '#cccccc',
+    }).setOrigin(0.5);
   }
 
   drawHpBar() {
@@ -92,14 +105,18 @@ class SimpleUnit {
 
   setY(y: number) {
     this.body.y = y;
+    this.weaponNameText.y = y - 55;
     this.drawHpBar();
   }
 
   destroy() {
     this.body.destroy();
     this.hpBar.destroy();
+    this.weaponNameText.destroy();
   }
 }
+
+// ---- GameScene class --------------------------------------------------------
 
 export class GameScene extends Phaser.Scene {
   private player!: SimpleUnit;
@@ -117,11 +134,24 @@ export class GameScene extends Phaser.Scene {
   private terrainGraphics!: Phaser.GameObjects.Graphics;
   private missionNameText!: Phaser.GameObjects.Text;
 
+  // Overlay containers (for start and result)
+  private overlayContainer!: Phaser.GameObjects.Container;
+  private overlayBg!: Phaser.GameObjects.Rectangle;
+  private overlayTitle!: Phaser.GameObjects.Text;
+  private overlaySubtitle!: Phaser.GameObjects.Text;
+
+  private battleStarted: boolean = false;
+  private gameOver: boolean = false;
+
   constructor() {
     super({ key: 'GameScene' });
   }
 
-  async create() {
+  async create(data?: { missionIndex?: number }) {
+    // Load mission index from data if provided
+    // (We'll set currentMissionIndex after loading missions)
+    const requestedIndex = data?.missionIndex ?? 0;
+
     const loadText = this.add
       .text(400, 300, 'Loading…', { fontSize: '18px', color: '#ffffff' })
       .setOrigin(0.5);
@@ -131,60 +161,57 @@ export class GameScene extends Phaser.Scene {
       this.loadUnitClasses(),
       this.loadMissions(),
     ]);
+
     this.weaponMap = weaponMap;
     this.unitClassMap = unitClassMap;
     this.missionList = missions.length ? missions : [this.getFallbackMission()];
-    this.currentMissionIndex = 0;
+    // Clamp index
+    this.currentMissionIndex = Phaser.Math.Clamp(requestedIndex, 0, this.missionList.length - 1);
     this.mission = this.missionList[this.currentMissionIndex];
 
-    // Build initial terrain height map (flat + hills)
+    // Build terrain (always same for now)
     this.initTerrain();
 
+    // Clear loading text and build permanent objects
     this.children.removeAll(true);
     this.buildTerrain();
-    this.setupGame();
+
+    // Create overlay (will be shown before battle starts)
+    this.createOverlay();
+
+    // Setup units and UI (they exist but hidden until battle starts)
+    this.setupGameObjects();
+
+    // Show start overlay
+    this.showStartOverlay();
   }
+
+  // ---- Load methods (unchanged structure) -----------------------------------
 
   private async loadWeapons(): Promise<Map<string, WeaponDef>> {
     const backendUrl = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
     const url = `${backendUrl}/weapons`;
     try {
       const res = await fetch(url);
-      if (!res.ok) {
-        throw new Error(`Failed to fetch weapons: ${res.statusText}`);
-      }
+      if (!res.ok) throw new Error(`Failed to fetch weapons: ${res.statusText}`);
       const weapons: WeaponDef[] = await res.json();
       const map = new Map<string, WeaponDef>();
-      for (const w of weapons) {
-        map.set(w.id, w);
-      }
+      for (const w of weapons) map.set(w.id, w);
       return map;
     } catch (err) {
       console.warn('Could not reach backend – using fallback weapon definitions', err);
       const map = new Map<string, WeaponDef>();
       map.set('basic_cannon', {
-        id: 'basic_cannon',
-        name: 'Basic Cannon',
-        damage: 3,
-        range: 200,
-        projectileColor: '#ffcc00',
-        explosionRadius: 30,
+        id: 'basic_cannon', name: 'Basic Cannon', damage: 3, range: 200,
+        projectileColor: '#ffcc00', explosionRadius: 30,
       });
       map.set('sniper_cannon', {
-        id: 'sniper_cannon',
-        name: 'Sniper Cannon',
-        damage: 5,
-        range: 400,
-        projectileColor: '#ff4444',
-        explosionRadius: 10,
+        id: 'sniper_cannon', name: 'Sniper Cannon', damage: 5, range: 400,
+        projectileColor: '#ff4444', explosionRadius: 10,
       });
       map.set('cluster_bomb', {
-        id: 'cluster_bomb',
-        name: 'Cluster Bomb',
-        damage: 1,
-        range: 150,
-        projectileColor: '#ff8800',
-        explosionRadius: 60,
+        id: 'cluster_bomb', name: 'Cluster Bomb', damage: 1, range: 150,
+        projectileColor: '#ff8800', explosionRadius: 60,
       });
       return map;
     }
@@ -195,42 +222,20 @@ export class GameScene extends Phaser.Scene {
     const url = `${backendUrl}/unit_classes`;
     try {
       const res = await fetch(url);
-      if (!res.ok) {
-        throw new Error(`Failed to fetch unit classes: ${res.statusText}`);
-      }
+      if (!res.ok) throw new Error(`Failed to fetch unit classes: ${res.statusText}`);
       const classes: UnitClassDef[] = await res.json();
       const map = new Map<string, UnitClassDef>();
-      for (const c of classes) {
-        map.set(c.id, c);
-      }
+      for (const c of classes) map.set(c.id, c);
       return map;
     } catch (err) {
       console.warn('Could not reach backend – using fallback unit classes', err);
       const map = new Map<string, UnitClassDef>();
-      map.set('soldier', {
-        id: 'soldier',
-        name: 'Soldier',
-        baseHp: 10,
-        allowedWeaponIds: ['basic_cannon', 'sniper_cannon'],
-        color: '0x4488ff',
-        description: 'Balanced all-rounder',
-      });
-      map.set('scout', {
-        id: 'scout',
-        name: 'Scout',
-        baseHp: 8,
-        allowedWeaponIds: ['sniper_cannon'],
-        color: '0x44ff44',
-        description: 'Fast, fragile, accurate',
-      });
-      map.set('heavy', {
-        id: 'heavy',
-        name: 'Heavy',
-        baseHp: 15,
-        allowedWeaponIds: ['basic_cannon', 'cluster_bomb'],
-        color: '0xff4444',
-        description: 'Slow but tough, area damage',
-      });
+      map.set('soldier', { id: 'soldier', name: 'Soldier', baseHp: 10,
+        allowedWeaponIds: ['basic_cannon', 'sniper_cannon'], color: '0x4488ff', description: 'Balanced all-rounder' });
+      map.set('scout', { id: 'scout', name: 'Scout', baseHp: 8,
+        allowedWeaponIds: ['sniper_cannon'], color: '0x44ff44', description: 'Fast, fragile, accurate' });
+      map.set('heavy', { id: 'heavy', name: 'Heavy', baseHp: 15,
+        allowedWeaponIds: ['basic_cannon', 'cluster_bomb'], color: '0xff4444', description: 'Slow but tough, area damage' });
       return map;
     }
   }
@@ -240,9 +245,7 @@ export class GameScene extends Phaser.Scene {
     const url = `${backendUrl}/missions`;
     try {
       const res = await fetch(url);
-      if (!res.ok) {
-        throw new Error(`Failed to fetch missions: ${res.statusText}`);
-      }
+      if (!res.ok) throw new Error(`Failed to fetch missions: ${res.statusText}`);
       return await res.json();
     } catch (err) {
       console.warn('Could not reach backend – using fallback mission list', err);
@@ -252,8 +255,7 @@ export class GameScene extends Phaser.Scene {
 
   private getFallbackMission(): MissionDef {
     return {
-      id: 'fallback_demo',
-      name: 'Fallback Demo',
+      id: 'fallback_demo', name: 'Fallback Demo',
       units: [
         { id: 'player', archetypeId: 'soldier', weaponId: 'basic_cannon', x: 150, y: 400, side: 'player' },
         { id: 'ai', archetypeId: 'heavy', weaponId: 'cluster_bomb', x: 650, y: 400, side: 'enemy' },
@@ -263,8 +265,7 @@ export class GameScene extends Phaser.Scene {
 
   private getSecondMission(): MissionDef {
     return {
-      id: 'second_fallback',
-      name: 'Second Battle',
+      id: 'second_fallback', name: 'Second Battle',
       units: [
         { id: 'player', archetypeId: 'scout', weaponId: 'sniper_cannon', x: 150, y: 400, side: 'player' },
         { id: 'ai', archetypeId: 'soldier', weaponId: 'basic_cannon', x: 650, y: 400, side: 'enemy' },
@@ -272,25 +273,19 @@ export class GameScene extends Phaser.Scene {
     };
   }
 
+  // ---- Terrain ---------------------------------------------------------------
+
   private initTerrain(): void {
     this.terrainHeights = new Array(800);
     for (let x = 0; x < 800; x++) {
-      let h = 450; // base ground
-      // first hill (x: 200..399)
+      let h = 450;
       if (x >= 200 && x < 400) {
-        if (x <= 300) {
-          h = 450 - ((x - 200) / 100) * 70;
-        } else {
-          h = 450 - ((400 - x) / 100) * 70;
-        }
+        if (x <= 300) h = 450 - ((x - 200) / 100) * 70;
+        else h = 450 - ((400 - x) / 100) * 70;
       }
-      // second hill (x: 400..600)
       if (x >= 400 && x <= 600) {
-        if (x <= 500) {
-          h = 450 - ((x - 400) / 100) * 70;
-        } else {
-          h = 450 - ((600 - x) / 100) * 70;
-        }
+        if (x <= 500) h = 450 - ((x - 400) / 100) * 70;
+        else h = 450 - ((600 - x) / 100) * 70;
       }
       this.terrainHeights[x] = Math.max(0, Math.min(600, h));
     }
@@ -331,44 +326,91 @@ export class GameScene extends Phaser.Scene {
     const x = Math.round(unit.body.x);
     if (x < 0 || x >= 800) return;
     const groundY = this.terrainHeights[x];
-    const standY = groundY - 25; // half of unit height (50)
-    if (unit.body.y < standY) {
-      unit.setY(standY);
-    }
+    const standY = groundY - 25;
+    if (unit.body.y < standY) unit.setY(standY);
   }
 
-  /**
-   * Resolve final unit stats by merging mission config with archetype defaults.
-   */
-  private resolveUnitConfig(cfg: UnitConfig): { hp: number; weaponId: string; color: number } {
+  // ---- Overlay system --------------------------------------------------------
+
+  private createOverlay(): void {
+    this.overlayBg = this.add.rectangle(400, 300, 800, 600, 0x000000, 0.7);
+    this.overlayTitle = this.add.text(400, 250, '', { fontSize: '36px', color: '#ffffff' }).setOrigin(0.5);
+    this.overlaySubtitle = this.add.text(400, 320, '', { fontSize: '20px', color: '#cccccc' }).setOrigin(0.5);
+    this.overlayContainer = this.add.container(0, 0, [
+      this.overlayBg, this.overlayTitle, this.overlaySubtitle,
+    ]);
+  }
+
+  private showStartOverlay(): void {
+    this.overlayBg.setVisible(true);
+    this.overlayTitle.setText(this.mission.name);
+    this.overlaySubtitle.setText('Press SPACE to start');
+    this.overlayContainer.setVisible(true);
+    this.battleStarted = false;
+    this.gameOver = false;
+
+    // Clear previous keyboard listener for start
+    this.input.keyboard!.once('keydown-SPACE', () => {
+      this.battleStarted = true;
+      this.overlayContainer.setVisible(false);
+      this.startBattle();
+    });
+  }
+
+  private showResultOverlay(victory: boolean): void {
+    this.overlayBg.setVisible(true);
+    this.overlayTitle.setText(victory ? 'VICTORY!' : 'DEFEAT!');
+    const hasNext = this.currentMissionIndex + 1 < this.missionList.length;
+    let subtitle = 'R  Restart | M  Menu';
+    if (hasNext) subtitle += ' | N  Next';
+    this.overlaySubtitle.setText(subtitle);
+    this.overlayContainer.setVisible(true);
+    this.gameOver = true;
+    this.isAnimating = true;
+    this.isPlayerTurn = false;
+
+    // Handle keyboard inputs after game over
+    this.input.keyboard!.once('keydown-R', () => {
+      this.scene.restart({ missionIndex: this.currentMissionIndex });
+    });
+    if (hasNext) {
+      this.input.keyboard!.once('keydown-N', () => {
+        this.scene.restart({ missionIndex: this.currentMissionIndex + 1 });
+      });
+    }
+    this.input.keyboard!.once('keydown-M', () => {
+      this.scene.start('MenuScene');
+    });
+  }
+
+  // ---- Unit resolution -------------------------------------------------------
+
+  private resolveUnitConfig(cfg: UnitConfig): { hp: number; weaponId: string; color: number; weaponName: string } {
     const archetypeId = cfg.archetypeId || 'soldier';
     const archetype = this.unitClassMap.get(archetypeId);
     if (!archetype) {
       console.warn(`Unknown archetype "${archetypeId}" – falling back to soldier`);
-      const defaultArchetype = this.unitClassMap.get('soldier')!;
       return this.resolveUnitConfig({ ...cfg, archetypeId: 'soldier' });
     }
 
-    // hp: mission hp overrides baseHp; if mission does not set hp, use baseHp
     const hp = cfg.hp !== undefined ? cfg.hp : archetype.baseHp;
-
-    // weaponId: mission weaponId overrides; if not provided, use first allowed weapon
     let weaponId = cfg.weaponId || archetype.allowedWeaponIds[0];
     if (archetype.allowedWeaponIds.indexOf(weaponId) === -1) {
-      console.warn(
-        `Weapon "${weaponId}" not allowed for archetype "${archetypeId}" – falling back to first allowed weapon`
-      );
+      console.warn(`Weapon "${weaponId}" not allowed for archetype "${archetypeId}" – falling back`);
       weaponId = archetype.allowedWeaponIds[0];
     }
 
-    // color: mission color overrides; if not provided, use archetype color
     const colorStr = cfg.color || archetype.color;
     const color = parseInt(colorStr);
 
-    return { hp, weaponId, color };
+    // Look up weapon name
+    const weaponDef = this.weaponMap.get(weaponId);
+    const weaponName = weaponDef ? weaponDef.name : weaponId;
+
+    return { hp, weaponId, color, weaponName };
   }
 
-  private setupGame() {
+  private setupGameObjects(): void {
     const playerCfg = this.mission.units.find((u) => u.side === 'player');
     const aiCfg = this.mission.units.find((u) => u.side === 'enemy');
 
@@ -380,51 +422,141 @@ export class GameScene extends Phaser.Scene {
     const aiResolved = this.resolveUnitConfig(aiCfg);
 
     this.player = new SimpleUnit(this, {
-      x: playerCfg.x,
-      y: playerCfg.y,
+      x: playerCfg.x, y: playerCfg.y,
       hp: playerResolved.hp,
       weaponId: playerResolved.weaponId,
       color: playerResolved.color,
       name: 'Player',
+      weaponName: playerResolved.weaponName,
     });
 
     this.ai = new SimpleUnit(this, {
-      x: aiCfg.x,
-      y: aiCfg.y,
+      x: aiCfg.x, y: aiCfg.y,
       hp: aiResolved.hp,
       weaponId: aiResolved.weaponId,
       color: aiResolved.color,
       name: 'AI',
+      weaponName: aiResolved.weaponName,
     });
 
-    // Place units on terrain
     const playerGround = this.terrainHeights[Math.round(playerCfg.x)];
     const aiGround = this.terrainHeights[Math.round(aiCfg.x)];
     this.player.setY(playerGround - 25);
     this.ai.setY(aiGround - 25);
 
-    // UI texts
-    this.missionNameText = this.add
-      .text(400, 20, this.mission.name, { fontSize: '20px', color: '#cccccc' })
-      .setOrigin(0.5);
+    // UI texts (hidden until battle start)
+    this.missionNameText = this.add.text(400, 20, this.mission.name, { fontSize: '20px', color: '#cccccc' }).setOrigin(0.5);
+    this.turnText = this.add.text(400, 60, '', { fontSize: '28px', color: '#ffffff' }).setOrigin(0.5);
+    this.statusText = this.add.text(400, 100, '', { fontSize: '18px', color: '#cccccc' }).setOrigin(0.5);
+  }
 
-    this.turnText = this.add
-      .text(400, 60, '', { fontSize: '28px', color: '#ffffff' })
-      .setOrigin(0.5);
-
-    this.statusText = this.add
-      .text(400, 100, '', { fontSize: '18px', color: '#cccccc' })
-      .setOrigin(0.5);
-
-    // Input – space fires for the player
+  private startBattle(): void {
+    // Enable input for firing
     this.input.keyboard!.on('keydown-SPACE', () => {
       if (this.isPlayerTurn && !this.isAnimating && this.player.isAlive()) {
         this.playerAttack();
       }
     });
-
     this.turnText.setText('Player Turn – press SPACE to fire');
   }
+
+  // ---- AI helpers ------------------------------------------------------------
+
+  private getAITargets(): SimpleUnit[] {
+    const targets: SimpleUnit[] = [];
+    if (this.player.isAlive()) targets.push(this.player);
+    return targets;
+  }
+
+  private getAIAimPoint(target: SimpleUnit): { x: number; y: number } {
+    return { x: target.body.x, y: target.body.y - 25 };
+  }
+
+  // ---- Turn logic ------------------------------------------------------------
+
+  private playerAttack() {
+    this.isAnimating = true;
+    const damage = this.getWeaponDamage(this.player.weaponId);
+    this.fireProjectile(this.player, this.ai, damage, () => {
+      if (!this.player.isAlive() || !this.ai.isAlive()) {
+        this.showResultOverlay(this.player.isAlive());
+        return;
+      }
+      this.time.delayedCall(500, () => this.aiTurn());
+    });
+  }
+
+  private aiTurn() {
+    this.isPlayerTurn = false;
+    this.turnText.setText('AI Turn');
+    this.statusText.setText('');
+    this.time.delayedCall(800, () => {
+      const targets = this.getAITargets();
+      if (targets.length === 0) {
+        this.showResultOverlay(true);
+        return;
+      }
+      const target = targets[0];
+      const damage = this.getWeaponDamage(this.ai.weaponId);
+      const aimPoint = this.getAIAimPoint(target);
+      this.fireProjectile(this.ai, target, damage, () => {
+        if (!this.player.isAlive() || !this.ai.isAlive()) {
+          this.showResultOverlay(this.player.isAlive());
+          return;
+        }
+        this.time.delayedCall(500, () => {
+          this.isPlayerTurn = true;
+          this.isAnimating = false;
+          this.turnText.setText('Player Turn – press SPACE to fire');
+        });
+      }, aimPoint.x, aimPoint.y);
+    });
+  }
+
+  // ---- Projectile / damage ---------------------------------------------------
+
+  private fireProjectile(
+    from: SimpleUnit, to: SimpleUnit, damage: number,
+    onComplete: () => void, targetX?: number, targetY?: number,
+  ) {
+    const color = this.getProjectileColor(from.weaponId);
+    const weaponDef = this.getWeaponDef(from.weaponId);
+    const explosionRadius = weaponDef ? weaponDef.explosionRadius : 30;
+    const projectile = this.add.circle(from.body.x, from.body.y - 25, 6, color);
+    const destX = targetX !== undefined ? targetX : to.body.x;
+    const destY = targetY !== undefined ? targetY : to.body.y - 25;
+
+    this.tweens.add({
+      targets: projectile,
+      x: destX, y: destY,
+      duration: 400,
+      ease: 'Power2',
+      onComplete: () => {
+        projectile.destroy();
+        to.takeDamage(damage);
+        this.statusText.setText(`${from.name} dealt ${damage} damage`);
+
+        // Explosion effect
+        const explosion = this.add.circle(destX, destY, 6, 0xffff00, 0.6);
+        this.tweens.add({
+          targets: explosion,
+          scaleX: explosionRadius / 6,
+          scaleY: explosionRadius / 6,
+          alpha: 0,
+          duration: 200,
+          ease: 'Quad.easeOut',
+          onComplete: () => explosion.destroy(),
+        });
+
+        this.destroyTerrain(destX, destY, explosionRadius);
+        this.applyGravity(this.player);
+        this.applyGravity(this.ai);
+        onComplete();
+      },
+    });
+  }
+
+  // ---- Weapon lookups -------------------------------------------------------
 
   private getWeaponDef(id: string): WeaponDef | undefined {
     return this.weaponMap.get(id);
@@ -439,159 +571,5 @@ export class GameScene extends Phaser.Scene {
     const w = this.getWeaponDef(weaponId);
     const colorStr = w ? w.projectileColor : '#ffcc00';
     return Phaser.Display.Color.HexStringToColor(colorStr).color;
-  }
-
-  private playerAttack() {
-    this.isAnimating = true;
-    const damage = this.getWeaponDamage(this.player.weaponId);
-    this.fireProjectile(this.player, this.ai, damage, () => {
-      if (!this.player.isAlive() || !this.ai.isAlive()) {
-        this.showGameOver(!this.player.isAlive() ? 'AI Wins!' : 'Player Wins!');
-        return;
-      }
-      this.time.delayedCall(500, () => {
-        this.aiTurn();
-      });
-    });
-  }
-
-  // --------------------------------------------------------------------------
-  // AI decision helpers – extensible for future difficulty/unit types
-  // --------------------------------------------------------------------------
-
-  /** Returns all currently alive enemy units */
-  private getAITargets(): SimpleUnit[] {
-    const targets: SimpleUnit[] = [];
-    if (this.player.isAlive()) {
-      targets.push(this.player);
-    }
-    // future: add more enemy units from mission
-    return targets;
-  }
-
-  /** Returns the point the AI will aim at (deterministic – easy to improve later) */
-  private getAIAimPoint(target: SimpleUnit): { x: number; y: number } {
-    // currently aims at the centre of the target's top edge
-    return { x: target.body.x, y: target.body.y - 25 };
-  }
-
-  /** AI turn logic */
-  private aiTurn() {
-    this.isPlayerTurn = false;
-    this.turnText.setText('AI Turn');
-    this.statusText.setText('');
-
-    this.time.delayedCall(800, () => {
-      const targets = this.getAITargets();
-      if (targets.length === 0) {
-        this.showGameOver('Player Wins!');
-        return;
-      }
-
-      const target = targets[0]; // pick first alive enemy
-      const damage = this.getWeaponDamage(this.ai.weaponId);
-      const aimPoint = this.getAIAimPoint(target);
-
-      this.fireProjectile(this.ai, target, damage, () => {
-        if (!this.player.isAlive() || !this.ai.isAlive()) {
-          this.showGameOver(!this.player.isAlive() ? 'AI Wins!' : 'Player Wins!');
-          return;
-        }
-        this.time.delayedCall(500, () => {
-          this.isPlayerTurn = true;
-          this.isAnimating = false;
-          this.turnText.setText('Player Turn – press SPACE to fire');
-        });
-      }, aimPoint.x, aimPoint.y);
-    });
-  }
-
-  // --------------------------------------------------------------------------
-  // Projectile & combat core
-  // --------------------------------------------------------------------------
-
-  /**
-   * Fires a projectile from one unit to another.
-   * If targetX/targetY are provided they override the destination,
-   * enabling explicit aiming (used by AI).
-   */
-  private fireProjectile(
-    from: SimpleUnit,
-    to: SimpleUnit,
-    damage: number,
-    onComplete: () => void,
-    targetX?: number,
-    targetY?: number,
-  ) {
-    const color = this.getProjectileColor(from.weaponId);
-    const weaponDef = this.getWeaponDef(from.weaponId);
-    const explosionRadius = weaponDef ? weaponDef.explosionRadius : 30;
-    const projectile = this.add.circle(from.body.x, from.body.y - 25, 6, color);
-    const destX = targetX !== undefined ? targetX : to.body.x;
-    const destY = targetY !== undefined ? targetY : to.body.y - 25;
-
-    this.tweens.add({
-      targets: projectile,
-      x: destX,
-      y: destY,
-      duration: 400,
-      ease: 'Power2',
-      onComplete: () => {
-        projectile.destroy();
-        to.takeDamage(damage);
-        this.statusText.setText(`${from.name} dealt ${damage} damage`);
-
-        // Destructible terrain at impact point – radius driven by weapon definition
-        this.destroyTerrain(destX, destY, explosionRadius);
-
-        // Both units fall after terrain change
-        this.applyGravity(this.player);
-        this.applyGravity(this.ai);
-
-        onComplete();
-      },
-    });
-  }
-
-  private showGameOver(message: string) {
-    this.isAnimating = true;
-    this.isPlayerTurn = false;
-    this.turnText.setText(message);
-
-    const hasNext = this.currentMissionIndex + 1 < this.missionList.length;
-    const restartText = 'R to restart';
-    const nextText = hasNext ? ' | N for next mission' : '';
-    this.statusText.setText(`${restartText}${nextText}`);
-
-    // Handle restart (R key)
-    this.input.keyboard!.on('keydown-R', () => {
-      this.scene.restart();
-    });
-
-    // Handle next mission (N key) – only if available
-    if (hasNext) {
-      this.input.keyboard!.on('keydown-N', () => {
-        this.currentMissionIndex++;
-        this.scene.restart();
-      });
-    }
-  }
-
-  /**
-   * Override init to propagate currentMissionIndex on scene restart.
-   * This ensures the scene uses the correct mission after restart/next.
-   */
-  init(data?: { missionIndex?: number }) {
-    if (data && data.missionIndex !== undefined) {
-      this.currentMissionIndex = data.missionIndex;
-    }
-  }
-
-  /**
-   * Override scene.restart() to pass the current mission index.
-   * We do this by overriding the default restart method.
-   */
-  restart() {
-    this.scene.restart({ missionIndex: this.currentMissionIndex });
   }
 }
