@@ -1,0 +1,6 @@
+
+This starts Vite and, once the dev server is ready, launches an Electron window.  
+The Electron entry point is `src/main.ts` (not used in browser mode).
+
+## Project Structure (abridged)
+

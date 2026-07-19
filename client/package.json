@@ -4,8 +4,9 @@
   "description": "Desktop game client (Electron + Phaser + React)",
   "main": "src/main.ts",
   "scripts": {
+    "dev": "vite",
     "start": "electron .",
-    "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "build": "vite build && electron-builder",
     "postinstall": "electron-builder install-app-deps"
   },

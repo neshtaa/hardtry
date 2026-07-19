@@ -1,7 +1,7 @@
 
-Leave the terminal open. The API is available at `http://localhost:8000`.
+The API is available at `http://localhost:8000`.
 
-### 2. Game Client (Electron + Phaser + Vite)
+### 2. Game Client (Phaser + Vite)
 
-Open a **second terminal**:
+Open a **separate terminal**:
 
