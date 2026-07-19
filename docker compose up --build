@@ -1,0 +1,7 @@
+
+## Endpoints
+
+| Method | Path      | Description                |
+|--------|-----------|----------------------------|
+| GET    | /health   | Returns `{"status": "ok"}` |
+| POST   | /echo     | Returns the posted JSON    |
