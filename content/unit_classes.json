@@ -1,0 +1,26 @@
+[
+  {
+    "id": "soldier",
+    "name": "Soldier",
+    "baseHp": 10,
+    "allowedWeaponIds": ["basic_cannon", "sniper_cannon"],
+    "color": "0x4488ff",
+    "description": "Balanced all-rounder"
+  },
+  {
+    "id": "scout",
+    "name": "Scout",
+    "baseHp": 8,
+    "allowedWeaponIds": ["sniper_cannon"],
+    "color": "0x44ff44",
+    "description": "Fast, fragile, accurate"
+  },
+  {
+    "id": "heavy",
+    "name": "Heavy",
+    "baseHp": 15,
+    "allowedWeaponIds": ["basic_cannon", "cluster_bomb"],
+    "color": "0xff4444",
+    "description": "Slow but tough, area damage"
+  }
+]

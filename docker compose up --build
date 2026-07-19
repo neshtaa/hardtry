@@ -9,3 +9,4 @@ The desktop client cannot be run inside Docker (requires a display server).
 - Health check endpoint: `GET /health` returns `{"status": "ok"}`.
 - The AI opponent selects a target (the player) and fires its equipped weapon (loaded from mission data). Its aim is currently deterministic (centre of the target).
 - Multiple missions can be defined in `content/missions.json`. After winning or losing, press **R** to replay the current mission or **N** to advance to the next mission (if available).
+- Unit archetypes are defined in `content/unit_classes.json`. Each archetype has base HP, allowed weapons, a default color, and a description. Missions can optionally specify an `archetypeId` and override HP, weapon, or color on a per‑unit basis.

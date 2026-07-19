@@ -24,3 +24,7 @@ async def get_units():
 @router.get("/missions")
 async def get_missions():
     return load_json("missions.json")
+
+@router.get("/unit_classes")
+async def get_unit_classes():
+    return load_json("unit_classes.json")

@@ -9,13 +9,23 @@ interface WeaponDef {
   explosionRadius: number;
 }
 
+interface UnitClassDef {
+  id: string;
+  name: string;
+  baseHp: number;
+  allowedWeaponIds: string[];
+  color: string;
+  description: string;
+}
+
 interface UnitConfig {
   id: string;
-  hp: number;
-  weaponId: string;
+  archetypeId?: string;
+  hp?: number;
+  weaponId?: string;
   x: number;
   y: number;
-  color: string;
+  color?: string;
   side: "player" | "enemy";
 }
 
@@ -99,6 +109,7 @@ export class GameScene extends Phaser.Scene {
   private isPlayerTurn: boolean = true;
   private isAnimating: boolean = false;
   private weaponMap: Map<string, WeaponDef> = new Map();
+  private unitClassMap: Map<string, UnitClassDef> = new Map();
   private missionList: MissionDef[] = [];
   private currentMissionIndex: number = 0;
   private mission!: MissionDef;
@@ -115,11 +126,13 @@ export class GameScene extends Phaser.Scene {
       .text(400, 300, 'Loading…', { fontSize: '18px', color: '#ffffff' })
       .setOrigin(0.5);
 
-    const [weaponMap, missions] = await Promise.all([
+    const [weaponMap, unitClassMap, missions] = await Promise.all([
       this.loadWeapons(),
+      this.loadUnitClasses(),
       this.loadMissions(),
     ]);
     this.weaponMap = weaponMap;
+    this.unitClassMap = unitClassMap;
     this.missionList = missions.length ? missions : [this.getFallbackMission()];
     this.currentMissionIndex = 0;
     this.mission = this.missionList[this.currentMissionIndex];
@@ -177,6 +190,51 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  private async loadUnitClasses(): Promise<Map<string, UnitClassDef>> {
+    const backendUrl = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
+    const url = `${backendUrl}/unit_classes`;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) {
+        throw new Error(`Failed to fetch unit classes: ${res.statusText}`);
+      }
+      const classes: UnitClassDef[] = await res.json();
+      const map = new Map<string, UnitClassDef>();
+      for (const c of classes) {
+        map.set(c.id, c);
+      }
+      return map;
+    } catch (err) {
+      console.warn('Could not reach backend – using fallback unit classes', err);
+      const map = new Map<string, UnitClassDef>();
+      map.set('soldier', {
+        id: 'soldier',
+        name: 'Soldier',
+        baseHp: 10,
+        allowedWeaponIds: ['basic_cannon', 'sniper_cannon'],
+        color: '0x4488ff',
+        description: 'Balanced all-rounder',
+      });
+      map.set('scout', {
+        id: 'scout',
+        name: 'Scout',
+        baseHp: 8,
+        allowedWeaponIds: ['sniper_cannon'],
+        color: '0x44ff44',
+        description: 'Fast, fragile, accurate',
+      });
+      map.set('heavy', {
+        id: 'heavy',
+        name: 'Heavy',
+        baseHp: 15,
+        allowedWeaponIds: ['basic_cannon', 'cluster_bomb'],
+        color: '0xff4444',
+        description: 'Slow but tough, area damage',
+      });
+      return map;
+    }
+  }
+
   private async loadMissions(): Promise<MissionDef[]> {
     const backendUrl = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
     const url = `${backendUrl}/missions`;
@@ -197,19 +255,19 @@ export class GameScene extends Phaser.Scene {
       id: 'fallback_demo',
       name: 'Fallback Demo',
       units: [
-        { id: 'player', hp: 10, weaponId: 'basic_cannon', x: 150, y: 400, color: '0x4488ff', side: 'player' },
-        { id: 'ai', hp: 10, weaponId: 'cluster_bomb', x: 650, y: 400, color: '0xff4444', side: 'enemy' },
+        { id: 'player', archetypeId: 'soldier', weaponId: 'basic_cannon', x: 150, y: 400, side: 'player' },
+        { id: 'ai', archetypeId: 'heavy', weaponId: 'cluster_bomb', x: 650, y: 400, side: 'enemy' },
       ],
     };
   }
 
   private getSecondMission(): MissionDef {
     return {
-      id: 'second_demo',
+      id: 'second_fallback',
       name: 'Second Battle',
       units: [
-        { id: 'player', hp: 12, weaponId: 'sniper_cannon', x: 150, y: 400, color: '0x4488ff', side: 'player' },
-        { id: 'ai', hp: 15, weaponId: 'basic_cannon', x: 650, y: 400, color: '0xff4444', side: 'enemy' },
+        { id: 'player', archetypeId: 'scout', weaponId: 'sniper_cannon', x: 150, y: 400, side: 'player' },
+        { id: 'ai', archetypeId: 'soldier', weaponId: 'basic_cannon', x: 650, y: 400, side: 'enemy' },
       ],
     };
   }
@@ -279,6 +337,37 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * Resolve final unit stats by merging mission config with archetype defaults.
+   */
+  private resolveUnitConfig(cfg: UnitConfig): { hp: number; weaponId: string; color: number } {
+    const archetypeId = cfg.archetypeId || 'soldier';
+    const archetype = this.unitClassMap.get(archetypeId);
+    if (!archetype) {
+      console.warn(`Unknown archetype "${archetypeId}" – falling back to soldier`);
+      const defaultArchetype = this.unitClassMap.get('soldier')!;
+      return this.resolveUnitConfig({ ...cfg, archetypeId: 'soldier' });
+    }
+
+    // hp: mission hp overrides baseHp; if mission does not set hp, use baseHp
+    const hp = cfg.hp !== undefined ? cfg.hp : archetype.baseHp;
+
+    // weaponId: mission weaponId overrides; if not provided, use first allowed weapon
+    let weaponId = cfg.weaponId || archetype.allowedWeaponIds[0];
+    if (archetype.allowedWeaponIds.indexOf(weaponId) === -1) {
+      console.warn(
+        `Weapon "${weaponId}" not allowed for archetype "${archetypeId}" – falling back to first allowed weapon`
+      );
+      weaponId = archetype.allowedWeaponIds[0];
+    }
+
+    // color: mission color overrides; if not provided, use archetype color
+    const colorStr = cfg.color || archetype.color;
+    const color = parseInt(colorStr);
+
+    return { hp, weaponId, color };
+  }
+
   private setupGame() {
     const playerCfg = this.mission.units.find((u) => u.side === 'player');
     const aiCfg = this.mission.units.find((u) => u.side === 'enemy');
@@ -287,21 +376,24 @@ export class GameScene extends Phaser.Scene {
       throw new Error('Mission must have exactly one player and one enemy unit');
     }
 
+    const playerResolved = this.resolveUnitConfig(playerCfg);
+    const aiResolved = this.resolveUnitConfig(aiCfg);
+
     this.player = new SimpleUnit(this, {
       x: playerCfg.x,
       y: playerCfg.y,
-      hp: playerCfg.hp,
-      weaponId: playerCfg.weaponId,
-      color: parseInt(playerCfg.color),
+      hp: playerResolved.hp,
+      weaponId: playerResolved.weaponId,
+      color: playerResolved.color,
       name: 'Player',
     });
 
     this.ai = new SimpleUnit(this, {
       x: aiCfg.x,
       y: aiCfg.y,
-      hp: aiCfg.hp,
-      weaponId: aiCfg.weaponId,
-      color: parseInt(aiCfg.color),
+      hp: aiResolved.hp,
+      weaponId: aiResolved.weaponId,
+      color: aiResolved.color,
       name: 'AI',
     });
 
