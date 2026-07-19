@@ -1,3 +1,58 @@
 
-### Docker (optional)
+This command:
+- Starts the Vite development server on port **5173**.
+- Waits until the server is ready, then attempts to launch an Electron window.
+
+**Important note:** The Electron main process (`src/main.ts`) is currently written in TypeScript and is not compiled by Vite. Attempting to start Electron directly via `npm run dev` may fail to open the window. If the Electron window does not appear, simply open your browser and navigate to **`http://localhost:5173`** – the game works there as well.
+
+## How to Play
+
+1. **Mission selection** – After loading, press a number key (1, 2, …) to pick a mission.
+2. **Start battle** – Press **SPACE** to start the battle.
+3. **Player turn** – Press **SPACE** to fire your weapon.
+4. **AI turn** – The AI will automatically fire after a short delay.
+5. **Result** – After winning or losing, use:
+   - **R** – Restart the current mission
+   - **N** – Advance to the next mission (if available)
+   - **M** – Return to the mission menu
+
+## Environment Variables
+
+- **`VITE_API_BASE`** (optional, default `http://localhost:8000`)  
+  Set this to change the backend URL the client connects to.  
+  
+  Example (when backend uses port 8001):
+  ```bash
+  # On Linux/macOS
+  export VITE_API_BASE=http://localhost:8001
+  # Windows (cmd)
+  set VITE_API_BASE=http://localhost:8001
+  ```
+  Then run `npm run dev` (the variable is read at build time).
+
+## Troubleshooting
+
+### Port 8000 is already in use (backend)
+- Change the port:
+  ```bash
+  uvicorn app.main:app --reload --port 8001
+  ```
+- Adjust `VITE_API_BASE` accordingly (see above).
+
+### Port 5173 is already in use (Vite)
+- Vite will automatically prompt to use the next available port.  
+  Accept it, or kill the old process (`lsof -i :5173` on Linux/macOS, `netstat -ano` on Windows).
+
+### Electron window doesn’t open / “Could not find any Electron windows”
+- The Electron main process is TypeScript and is not being compiled. Open `http://localhost:5173` directly in a browser instead.
+- On headless servers, you can still run the Vite server and visit the URL from another machine on the same network (use `--host` with Vite: `npx vite --host`).
+
+### TypeScript / module errors in the console
+- Make sure you are inside the `client/` directory when running `npm install` and `npm run dev`.
+- Run `npm install` again if dependencies changed.
+
+### “Cannot find module ‘phaser’” or similar
+- Run `npm install` inside `client/` first.
+
+## Project Structure (abridged)
 
