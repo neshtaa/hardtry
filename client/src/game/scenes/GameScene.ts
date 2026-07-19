@@ -216,7 +216,6 @@ export class GameScene extends Phaser.Scene {
       const h = this.terrainHeights[x];
       this.terrainGraphics.fillRect(x, h, 1, 600 - h);
     }
-    // add slight colour variation for hills (optional – skip for now)
   }
 
   private destroyTerrain(cx: number, cy: number, radius: number = 30): void {
@@ -322,13 +321,44 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  // --------------------------------------------------------------------------
+  // AI decision helpers – extensible for future difficulty/unit types
+  // --------------------------------------------------------------------------
+
+  /** Returns all currently alive enemy units */
+  private getAITargets(): SimpleUnit[] {
+    const targets: SimpleUnit[] = [];
+    if (this.player.isAlive()) {
+      targets.push(this.player);
+    }
+    // future: add more enemy units from mission
+    return targets;
+  }
+
+  /** Returns the point the AI will aim at (deterministic – easy to improve later) */
+  private getAIAimPoint(target: SimpleUnit): { x: number; y: number } {
+    // currently aims at the centre of the target's top edge
+    return { x: target.body.x, y: target.body.y - 25 };
+  }
+
+  /** AI turn logic */
   private aiTurn() {
     this.isPlayerTurn = false;
     this.turnText.setText('AI Turn');
     this.statusText.setText('');
+
     this.time.delayedCall(800, () => {
+      const targets = this.getAITargets();
+      if (targets.length === 0) {
+        this.showGameOver('Player Wins!');
+        return;
+      }
+
+      const target = targets[0]; // pick first alive enemy
       const damage = this.getWeaponDamage(this.ai.weaponId);
-      this.fireProjectile(this.ai, this.player, damage, () => {
+      const aimPoint = this.getAIAimPoint(target);
+
+      this.fireProjectile(this.ai, target, damage, () => {
         if (!this.player.isAlive() || !this.ai.isAlive()) {
           this.showGameOver(!this.player.isAlive() ? 'AI Wins!' : 'Player Wins!');
           return;
@@ -338,35 +368,45 @@ export class GameScene extends Phaser.Scene {
           this.isAnimating = false;
           this.turnText.setText('Player Turn – press SPACE to fire');
         });
-      });
+      }, aimPoint.x, aimPoint.y);
     });
   }
 
+  // --------------------------------------------------------------------------
+  // Projectile & combat core
+  // --------------------------------------------------------------------------
+
+  /**
+   * Fires a projectile from one unit to another.
+   * If targetX/targetY are provided they override the destination,
+   * enabling explicit aiming (used by AI).
+   */
   private fireProjectile(
     from: SimpleUnit,
     to: SimpleUnit,
     damage: number,
     onComplete: () => void,
+    targetX?: number,
+    targetY?: number,
   ) {
     const color = this.getProjectileColor(from.weaponId);
     const projectile = this.add.circle(from.body.x, from.body.y - 25, 6, color);
+    const destX = targetX !== undefined ? targetX : to.body.x;
+    const destY = targetY !== undefined ? targetY : to.body.y - 25;
 
     this.tweens.add({
       targets: projectile,
-      x: to.body.x,
-      y: to.body.y - 25,
+      x: destX,
+      y: destY,
       duration: 400,
       ease: 'Power2',
       onComplete: () => {
         projectile.destroy();
-        // Apply damage first
         to.takeDamage(damage);
         this.statusText.setText(`${from.name} dealt ${damage} damage`);
 
         // Destructible terrain at impact point
-        const impactX = to.body.x;
-        const impactY = to.body.y - 25;
-        this.destroyTerrain(impactX, impactY);
+        this.destroyTerrain(destX, destY);
 
         // Both units fall after terrain change
         this.applyGravity(this.player);
