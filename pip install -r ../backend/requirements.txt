@@ -1,0 +1,4 @@
+
+---
+
+**This README is the single canonical source of truth.** No other README files exist in the repository.
