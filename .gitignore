@@ -23,3 +23,8 @@ dist/
 .DS_Store
 Thumbs.db
 .aider*
+
+# Prevent accidentally committed shell-command directories
+/cp ..
+/pip install -r ../backend
+/pytest tests

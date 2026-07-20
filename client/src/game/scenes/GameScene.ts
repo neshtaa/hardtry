@@ -151,6 +151,11 @@ export class GameScene extends Phaser.Scene {
     // Clear stale keyboard listeners from previous runs
     this.input.keyboard!.removeAllListeners();
 
+    // Ensure all listeners are removed when the scene is shut down
+    this.events.once('shutdown', () => {
+      this.input.keyboard!.removeAllListeners(true);
+    });
+
     const requestedIndex = data?.missionIndex ?? 0;
 
     const loadText = this.add
@@ -350,12 +355,18 @@ export class GameScene extends Phaser.Scene {
     this.battleStarted = false;
     this.gameOver = false;
 
-    // Clear previous keyboard listener for start
-    this.input.keyboard!.once('keydown-SPACE', () => {
-      this.battleStarted = true;
-      this.overlayContainer.setVisible(false);
-      this.startBattle();
-    });
+    // Use an `on` listener instead of `once` to ensure it works after scene restarts
+    // It will be removed later when battle starts or when scene is destroyed.
+    const startHandler = () => {
+      if (!this.battleStarted && this.overlayContainer.visible) {
+        this.battleStarted = true;
+        this.overlayContainer.setVisible(false);
+        this.startBattle();
+        // Remove this specific listener to prevent double firing
+        this.input.keyboard!.off('keydown-SPACE', startHandler);
+      }
+    };
+    this.input.keyboard!.on('keydown-SPACE', startHandler);
   }
 
   private showResultOverlay(victory: boolean): void {

@@ -74,6 +74,12 @@ export class MenuScene extends Phaser.Scene {
 
     this.missions.forEach((m, i) => {
       const y = 150 + i * 60;
+
+      // Semi-transparent dark rectangle to improve text contrast
+      const bg = this.add
+        .rectangle(400, y, 360, 40, 0x000000, 0.7)
+        .setOrigin(0.5);
+
       const text = this.add
         .text(400, y, `${i + 1}. ${m.name}`, {
           fontSize: '22px',
@@ -83,9 +89,11 @@ export class MenuScene extends Phaser.Scene {
         .setInteractive({ useHandCursor: true })
         .on('pointerover', () => {
           text.setColor('#ffaa00');
+          bg.setFillStyle(0x222222, 0.8);
         })
         .on('pointerout', () => {
           text.setColor('#ffffff');
+          bg.setFillStyle(0x000000, 0.7);
         })
         .on('pointerdown', () => {
           this.chosenIndex = i;
