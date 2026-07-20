@@ -143,6 +143,9 @@ export class GameScene extends Phaser.Scene {
   private battleStarted: boolean = false;
   private gameOver: boolean = false;
 
+  // Reference to the combat SPACE handler so it can be cleaned up
+  private spaceHandler: (() => void) | null = null;
+
   constructor() {
     super({ key: 'GameScene' });
   }
@@ -201,6 +204,7 @@ export class GameScene extends Phaser.Scene {
     this.isAnimating = false;
     this.battleStarted = false;
     this.gameOver = false;
+    this.spaceHandler = null;
 
     // Clear the overlay references (they will be re‑created in create)
     // (For safety, destroy if they exist from a previous run)
@@ -379,18 +383,14 @@ export class GameScene extends Phaser.Scene {
     this.battleStarted = false;
     this.gameOver = false;
 
-    // Use an `on` listener instead of `once` to ensure it works after scene restarts
-    // It will be removed later when battle starts or when scene is destroyed.
-    const startHandler = () => {
+    // Use once so it auto-removes after being pressed
+    this.input.keyboard!.once('keydown-SPACE', () => {
       if (!this.battleStarted && this.overlayContainer.visible) {
         this.battleStarted = true;
         this.overlayContainer.setVisible(false);
         this.startBattle();
-        // Remove this specific listener to prevent double firing
-        this.input.keyboard!.off('keydown-SPACE', startHandler);
       }
-    };
-    this.input.keyboard!.on('keydown-SPACE', startHandler);
+    });
   }
 
   private showResultOverlay(victory: boolean): void {
@@ -404,6 +404,12 @@ export class GameScene extends Phaser.Scene {
     this.gameOver = true;
     this.isAnimating = true;
     this.isPlayerTurn = false;
+
+    // Remove any stale combat SPACE listener before registering result keys
+    if (this.spaceHandler) {
+      this.input.keyboard!.off('keydown-SPACE', this.spaceHandler);
+      this.spaceHandler = null;
+    }
 
     // Handle keyboard inputs after game over
     this.input.keyboard!.once('keydown-R', () => {
@@ -488,11 +494,12 @@ export class GameScene extends Phaser.Scene {
 
   private startBattle(): void {
     // Enable input for firing
-    this.input.keyboard!.on('keydown-SPACE', () => {
+    this.spaceHandler = () => {
       if (this.isPlayerTurn && !this.isAnimating && this.player.isAlive()) {
         this.playerAttack();
       }
-    });
+    };
+    this.input.keyboard!.on('keydown-SPACE', this.spaceHandler);
     this.turnText.setText('Player Turn – press SPACE to fire');
   }
 
