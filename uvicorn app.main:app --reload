@@ -1,7 +1,7 @@
 
 The API becomes available at **http://localhost:8000**.  
-When the backend is reachable, the frontend fetches live weapons, units, and missions from it.  
-When the backend is offline, the client relies on built‑in fallback data (no page reload needed).
+When the backend is reachable, the frontend fetches live weapons, units, and missions.  
+When the backend is offline, the client uses built‑in fallback data.
 
 ## Important Notes
 
@@ -9,7 +9,7 @@ When the backend is offline, the client relies on built‑in fallback data (no p
 - **Health check** – `GET /health` returns `{"status": "ok"}`.
 - **Fallback data** – If the backend is unreachable, the client uses embedded fallback content.
 - **Electron** – The `client/src/main.ts` and `client/src/preload.ts` files are for future desktop packaging. They are **not needed** for the browser‑first workflow.
-- **No persistent storage** – The current vertical slice does not save progress.
+- **No persistent storage** – The current version does not save progress.
 
 ## Troubleshooting
 

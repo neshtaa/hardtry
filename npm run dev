@@ -1,6 +1,7 @@
 
-Open **http://localhost:5173** in your browser.  
-The game will start immediately using embedded fallback data if the backend is not running.
+Open **http://localhost:5173** in your browser.
+
+The game will load immediately; it includes fallback data so the backend is not required.
 
 ### 3. (Optional) Start the backend API
 
