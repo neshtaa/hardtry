@@ -1,2 +1,0 @@
-
-After this, the directories will be gone from the repository. (If any of them contained files you want to keep, move them out before running `git rm`.)

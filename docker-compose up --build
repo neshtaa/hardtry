@@ -1,9 +1,0 @@
-
-This starts the backend on port 8000.  
-The desktop client cannot be run inside Docker (requires a display server).
-
-## Important Notes
-
-- The backend includes CORS middleware configured to allow all origins during development.
-- The desktop client communicates directly with the game’s Phaser engine; no HTTP calls to the backend are used in the current vertical slice.
-- Health check endpoint: `GET /health` returns `{"status": "ok"}`.
