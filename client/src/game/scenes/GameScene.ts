@@ -148,8 +148,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   async create(data?: { missionIndex?: number }) {
-    // Load mission index from data if provided
-    // (We'll set currentMissionIndex after loading missions)
+    // Clear stale keyboard listeners from previous runs
+    this.input.keyboard!.removeAllListeners();
+
     const requestedIndex = data?.missionIndex ?? 0;
 
     const loadText = this.add
@@ -255,7 +256,7 @@ export class GameScene extends Phaser.Scene {
 
   private getFallbackMission(): MissionDef {
     return {
-      id: 'fallback_demo', name: 'Fallback Demo',
+      id: 'fallback_demo', name: 'Training Ground',
       units: [
         { id: 'player', archetypeId: 'soldier', weaponId: 'basic_cannon', x: 150, y: 400, side: 'player' },
         { id: 'ai', archetypeId: 'heavy', weaponId: 'cluster_bomb', x: 650, y: 400, side: 'enemy' },

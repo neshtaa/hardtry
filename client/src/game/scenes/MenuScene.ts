@@ -45,7 +45,7 @@ export class MenuScene extends Phaser.Scene {
       this.missions = [
         {
           id: 'fallback_demo',
-          name: 'Fallback Demo',
+          name: 'Training Ground',
           units: [
             { id: 'player', archetypeId: 'soldier', weaponId: 'basic_cannon', x: 150, y: 400, side: 'player' },
             { id: 'ai', archetypeId: 'heavy', weaponId: 'cluster_bomb', x: 650, y: 400, side: 'enemy' },
@@ -64,14 +64,33 @@ export class MenuScene extends Phaser.Scene {
 
     hint.destroy();
 
+    // Hint for interaction
+    this.add
+      .text(400, 100, 'Press 1–N or click a mission', {
+        fontSize: '14px',
+        color: '#aaaaaa',
+      })
+      .setOrigin(0.5);
+
     this.missions.forEach((m, i) => {
-      const y = 140 + i * 60;
-      this.add
+      const y = 150 + i * 60;
+      const text = this.add
         .text(400, y, `${i + 1}. ${m.name}`, {
           fontSize: '22px',
-          color: '#cccccc',
+          color: '#ffffff',
         })
-        .setOrigin(0.5);
+        .setOrigin(0.5)
+        .setInteractive({ useHandCursor: true })
+        .on('pointerover', () => {
+          text.setColor('#ffaa00');
+        })
+        .on('pointerout', () => {
+          text.setColor('#ffffff');
+        })
+        .on('pointerdown', () => {
+          this.chosenIndex = i;
+          this.startMission();
+        });
     });
 
     this.input.keyboard!.on('keydown', (event: KeyboardEvent) => {
