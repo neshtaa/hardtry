@@ -148,6 +148,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   async create(data?: { missionIndex?: number }) {
+    // ── Reset all state that may have survived from a previous life ──
+    this.resetState();
+
     // Clear stale keyboard listeners from previous runs
     this.input.keyboard!.removeAllListeners();
 
@@ -190,6 +193,27 @@ export class GameScene extends Phaser.Scene {
 
     // Show start overlay
     this.showStartOverlay();
+  }
+
+  // ── Reset all combat / scene state to defaults ──
+  private resetState(): void {
+    this.isPlayerTurn = true;
+    this.isAnimating = false;
+    this.battleStarted = false;
+    this.gameOver = false;
+
+    // Clear the overlay references (they will be re‑created in create)
+    // (For safety, destroy if they exist from a previous run)
+    // They are re‑assigned in createOverlay anyway.
+    this.overlayContainer = undefined as unknown as Phaser.GameObjects.Container;
+    this.overlayBg = undefined as unknown as Phaser.GameObjects.Rectangle;
+    this.overlayTitle = undefined as unknown as Phaser.GameObjects.Text;
+    this.overlaySubtitle = undefined as unknown as Phaser.GameObjects.Text;
+
+    // Clear any unit references (they will be re‑created in setupGameObjects)
+    // The old SimpleUnit instances are destroyed when children are removed
+    this.player = undefined as unknown as SimpleUnit;
+    this.ai = undefined as unknown as SimpleUnit;
   }
 
   // ---- Load methods (unchanged structure) -----------------------------------
