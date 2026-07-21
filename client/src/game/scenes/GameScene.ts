@@ -53,6 +53,7 @@ class SimpleUnit {
   scene: Phaser.Scene;
   body: Phaser.GameObjects.Rectangle;
   hpBar: Phaser.GameObjects.Graphics;
+  hpText: Phaser.GameObjects.Text;
   hp: number;
   maxHp: number;
   weaponId: string;
@@ -72,12 +73,18 @@ class SimpleUnit {
     this.body.setStrokeStyle(2, 0xffffff);
 
     this.hpBar = scene.add.graphics();
-    this.drawHpBar();
+
+    this.hpText = scene.add.text(config.x, config.y - 43, `${this.hp}/${this.maxHp}`, {
+      fontSize: '11px',
+      color: '#ffffff',
+    }).setOrigin(0.5);
 
     this.weaponNameText = scene.add.text(config.x, config.y - 55, config.weaponName, {
       fontSize: '12px',
       color: '#cccccc',
     }).setOrigin(0.5);
+
+    this.drawHpBar();
   }
 
   drawHpBar() {
@@ -92,6 +99,7 @@ class SimpleUnit {
     const barColor = ratio > 0.5 ? 0x00ff00 : ratio > 0.25 ? 0xffaa00 : 0xff0000;
     this.hpBar.fillStyle(barColor);
     this.hpBar.fillRect(x, y, barWidth * ratio, barHeight);
+    this.hpText.setText(`${this.hp}/${this.maxHp}`);
   }
 
   takeDamage(amount: number) {
@@ -106,12 +114,14 @@ class SimpleUnit {
   setY(y: number) {
     this.body.y = y;
     this.weaponNameText.y = y - 55;
+    this.hpText.y = y - 43;
     this.drawHpBar();
   }
 
   destroy() {
     this.body.destroy();
     this.hpBar.destroy();
+    this.hpText.destroy();
     this.weaponNameText.destroy();
   }
 }
@@ -569,11 +579,26 @@ export class GameScene extends Phaser.Scene {
     const destX = targetX !== undefined ? targetX : to.body.x;
     const destY = targetY !== undefined ? targetY : to.body.y - 25;
 
+    // Parabolic arc
+    const startX = projectile.x;
+    const startY = projectile.y;
+    const endX = destX;
+    const endY = destY;
+    const horizontalDist = Math.abs(endX - startX);
+    const parabolaHeight = Math.max(80, horizontalDist * 0.4);
+    const tweenData = { progress: 0 };
+
     this.tweens.add({
-      targets: projectile,
-      x: destX, y: destY,
+      targets: tweenData,
+      progress: 1,
       duration: 400,
       ease: 'Power2',
+      onUpdate: () => {
+        const t = tweenData.progress;
+        const x = startX + (endX - startX) * t;
+        const y = startY + (endY - startY) * t - parabolaHeight * 4 * t * (1 - t);
+        projectile.setPosition(x, y);
+      },
       onComplete: () => {
         projectile.destroy();
         to.takeDamage(damage);
