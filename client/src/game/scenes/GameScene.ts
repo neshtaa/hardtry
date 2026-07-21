@@ -124,6 +124,35 @@ class SimpleUnit {
     this.hpText.destroy();
     this.weaponNameText.destroy();
   }
+
+  playDeathAnimation(callback: () => void) {
+    // Hide UI elements
+    this.hpBar.setVisible(false);
+    this.hpText.setVisible(false);
+    this.weaponNameText.setVisible(false);
+
+    let flashCount = 0;
+    const flash = () => {
+      if (flashCount >= 6) {
+        // 3 flashes completed → fade out body
+        this.scene.tweens.add({
+          targets: this.body,
+          alpha: 0,
+          duration: 400,
+          onComplete: () => {
+            this.destroy();
+            callback();
+          },
+        });
+        return;
+      }
+      const color = flashCount % 2 === 0 ? 0xff0000 : 0xffffff;
+      this.body.setFillStyle(color);
+      flashCount++;
+      this.scene.time.delayedCall(120, flash);
+    };
+    flash();
+  }
 }
 
 // ---- GameScene class --------------------------------------------------------
@@ -529,6 +558,8 @@ export class GameScene extends Phaser.Scene {
 
   private playerAttack() {
     this.isAnimating = true;
+    // Immediately indicate AI's upcoming turn
+    this.turnText.setText('AI Turn – thinking…');
     const damage = this.getWeaponDamage(this.player.weaponId);
     this.fireProjectile(this.player, this.ai, damage, () => {
       if (!this.player.isAlive() || !this.ai.isAlive()) {
@@ -541,7 +572,6 @@ export class GameScene extends Phaser.Scene {
 
   private aiTurn() {
     this.isPlayerTurn = false;
-    this.turnText.setText('AI Turn');
     this.statusText.setText('');
     this.time.delayedCall(800, () => {
       const targets = this.getAITargets();
@@ -585,13 +615,13 @@ export class GameScene extends Phaser.Scene {
     const endX = destX;
     const endY = destY;
     const horizontalDist = Math.abs(endX - startX);
-    const parabolaHeight = Math.max(80, horizontalDist * 0.4);
+    const parabolaHeight = Math.max(120, horizontalDist * 0.6);
     const tweenData = { progress: 0 };
 
     this.tweens.add({
       targets: tweenData,
       progress: 1,
-      duration: 400,
+      duration: 800,
       ease: 'Power2',
       onUpdate: () => {
         const t = tweenData.progress;
@@ -619,7 +649,16 @@ export class GameScene extends Phaser.Scene {
         this.destroyTerrain(destX, destY, explosionRadius);
         this.applyGravity(this.player);
         this.applyGravity(this.ai);
-        onComplete();
+
+        // If the target died, play a death animation before calling onComplete
+        const targetDead = !to.isAlive();
+        if (targetDead) {
+          to.playDeathAnimation(() => {
+            onComplete();
+          });
+        } else {
+          onComplete();
+        }
       },
     });
   }
