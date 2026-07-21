@@ -131,10 +131,22 @@ class SimpleUnit {
     this.hpText.setVisible(false);
     this.weaponNameText.setVisible(false);
 
-    let flashCount = 0;
-    const flash = () => {
-      if (flashCount >= 6) {
-        // 3 flashes completed → fade out body
+    // Flash red/white 3 full cycles using yoyo tween
+    const flashData = { value: 0 };
+
+    this.scene.tweens.add({
+      targets: flashData,
+      value: 1,
+      duration: 80,
+      yoyo: true,
+      repeat: 2, // gives 3 full cycles (each cycle = two legs)
+      ease: 'Linear',
+      onUpdate: () => {
+        const color = flashData.value < 0.5 ? 0xff0000 : 0xffffff;
+        this.body.setFillStyle(color);
+      },
+      onComplete: () => {
+        // Fade out after flash
         this.scene.tweens.add({
           targets: this.body,
           alpha: 0,
@@ -144,14 +156,8 @@ class SimpleUnit {
             callback();
           },
         });
-        return;
-      }
-      const color = flashCount % 2 === 0 ? 0xff0000 : 0xffffff;
-      this.body.setFillStyle(color);
-      flashCount++;
-      this.scene.time.delayedCall(120, flash);
-    };
-    flash();
+      },
+    });
   }
 }
 
@@ -162,6 +168,7 @@ export class GameScene extends Phaser.Scene {
   private ai!: SimpleUnit;
   private turnText!: Phaser.GameObjects.Text;
   private statusText!: Phaser.GameObjects.Text;
+  private damageTween: Phaser.Tweens.Tween | null = null;
   private isPlayerTurn: boolean = true;
   private isAnimating: boolean = false;
   private weaponMap: Map<string, WeaponDef> = new Map();
@@ -244,6 +251,7 @@ export class GameScene extends Phaser.Scene {
     this.battleStarted = false;
     this.gameOver = false;
     this.spaceHandler = null;
+    this.damageTween = null;
 
     // Clear the overlay references (they will be re‑created in create)
     // (For safety, destroy if they exist from a previous run)
@@ -433,6 +441,15 @@ export class GameScene extends Phaser.Scene {
   }
 
   private showResultOverlay(victory: boolean): void {
+    // Hide turn text and damage text before showing result
+    this.turnText.setVisible(false);
+    if (this.damageTween) {
+      this.damageTween.stop();
+      this.damageTween = null;
+    }
+    this.statusText.setAlpha(1);
+    this.statusText.setText('');
+
     this.overlayBg.setVisible(true);
     this.overlayTitle.setText(victory ? 'VICTORY!' : 'DEFEAT!');
     const hasNext = this.currentMissionIndex + 1 < this.missionList.length;
@@ -502,6 +519,9 @@ export class GameScene extends Phaser.Scene {
     const playerResolved = this.resolveUnitConfig(playerCfg);
     const aiResolved = this.resolveUnitConfig(aiCfg);
 
+    // Bug 1: force enemy color to red
+    aiResolved.color = 0xff4444;
+
     this.player = new SimpleUnit(this, {
       x: playerCfg.x, y: playerCfg.y,
       hp: playerResolved.hp,
@@ -558,6 +578,15 @@ export class GameScene extends Phaser.Scene {
 
   private playerAttack() {
     this.isAnimating = true;
+
+    // Reset damage text for the new turn
+    if (this.damageTween) {
+      this.damageTween.stop();
+      this.damageTween = null;
+    }
+    this.statusText.setAlpha(0);
+    this.statusText.setText('');
+
     // Immediately indicate AI's upcoming turn
     this.turnText.setText('AI Turn – thinking…');
     const damage = this.getWeaponDamage(this.player.weaponId);
@@ -573,6 +602,15 @@ export class GameScene extends Phaser.Scene {
   private aiTurn() {
     this.isPlayerTurn = false;
     this.statusText.setText('');
+
+    // Reset damage text for the new turn
+    if (this.damageTween) {
+      this.damageTween.stop();
+      this.damageTween = null;
+    }
+    this.statusText.setAlpha(0);
+    this.statusText.setText('');
+
     this.time.delayedCall(800, () => {
       const targets = this.getAITargets();
       if (targets.length === 0) {
@@ -632,7 +670,25 @@ export class GameScene extends Phaser.Scene {
       onComplete: () => {
         projectile.destroy();
         to.takeDamage(damage);
+
+        // Set and fade damage text
         this.statusText.setText(`${from.name} dealt ${damage} damage`);
+        this.statusText.setAlpha(1);
+
+        // Stop any previous damage fade and start new one
+        if (this.damageTween) {
+          this.damageTween.stop();
+          this.damageTween = null;
+        }
+        this.damageTween = this.tweens.add({
+          targets: this.statusText,
+          alpha: 0,
+          delay: 1000,
+          duration: 600,
+          onComplete: () => {
+            this.damageTween = null;
+          },
+        });
 
         // Explosion effect
         const explosion = this.add.circle(destX, destY, 6, 0xffff00, 0.6);
