@@ -1,19 +1,5 @@
 import Phaser from 'phaser';
-
-interface MissionDef {
-  id: string;
-  name: string;
-  units: {
-    id: string;
-    archetypeId?: string;
-    hp?: number;
-    weaponId?: string;
-    x: number;
-    y: number;
-    color?: string;
-    side: 'player' | 'enemy';
-  }[];
-}
+import { MissionDef } from '../types';
 
 export class MenuScene extends Phaser.Scene {
   private missions: MissionDef[] = [];
