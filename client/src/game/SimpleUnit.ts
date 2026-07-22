@@ -70,6 +70,13 @@ class SimpleUnit {
     this.drawHpBar();
   }
 
+  setX(x: number) {
+    this.body.x = x;
+    this.weaponNameText.x = x;
+    this.hpText.x = x;
+    this.drawHpBar();
+  }
+
   destroy() {
     this.body.destroy();
     this.hpBar.destroy();

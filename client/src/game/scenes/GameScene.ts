@@ -123,10 +123,11 @@ export class GameScene extends Phaser.Scene {
     const startX = this.player.body.x;
     const startY = this.player.body.y - 25;
 
-    // simulate a few steps to draw dots
+    // Use the exact same constants as the actual projectile
     const angleRad = Phaser.Math.DegToRad(this.aimAngle);
-    const speed = 400 * this.aimPower; // arbitrary base speed
-    const g = 300; // gravity
+    const speed = 400 * this.aimPower;
+    const g = 400;
+    const windFactor = 20;
 
     const vx = Math.cos(angleRad) * speed;
     const vy = -Math.sin(angleRad) * speed;
@@ -135,17 +136,13 @@ export class GameScene extends Phaser.Scene {
     const dt = 0.04;
 
     this.aimLineGraphic.lineStyle(1, 0xffff00, 0.6);
-    let px = startX;
-    let py = startY;
     let t = 0;
     for (let i = 0; i < steps; i++) {
       const nextT = t + dt;
-      const x = startX + vx * nextT + this.wind * nextT * 30; // wind factor
+      const x = startX + vx * nextT + this.wind * nextT * windFactor;
       const y = startY + vy * nextT + 0.5 * g * nextT * nextT;
       this.aimLineGraphic.fillStyle(0xffff00, 0.6);
       this.aimLineGraphic.fillCircle(x, y, 2);
-      px = x;
-      py = y;
       t = nextT;
     }
   }
@@ -298,6 +295,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   private showResultOverlay(victory: boolean): void {
+    // Clear aim line graphic before showing result
+    this.aimLineGraphic.clear();
+
     this.turnText.setVisible(false);
     if (this.damageTween) {
       this.damageTween.stop();
@@ -444,7 +444,7 @@ export class GameScene extends Phaser.Scene {
       const newX = Math.max(0, this.player.body.x - moveStep);
       const moved = this.player.body.x - newX;
       if (this.playerMoved + moved <= this.moveBudget) {
-        this.player.body.x = newX;
+        this.player.setX(newX);
         this.playerMoved += moved;
         this.applyGravity(this.player);
         this.redrawAimLine();
@@ -454,7 +454,7 @@ export class GameScene extends Phaser.Scene {
       const newX = Math.min(800, this.player.body.x + moveStep);
       const moved = newX - this.player.body.x;
       if (this.playerMoved + moved <= this.moveBudget) {
-        this.player.body.x = newX;
+        this.player.setX(newX);
         this.playerMoved += moved;
         this.applyGravity(this.player);
         this.redrawAimLine();
@@ -540,6 +540,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   private aiTurn() {
+    // Clear aim line during AI turn
+    this.aimLineGraphic.clear();
+
     this.isPlayerTurn = false;
 
     if (this.damageTween) {
@@ -608,12 +611,16 @@ export class GameScene extends Phaser.Scene {
 
     const projectile = this.add.circle(startX, startY, 6, color);
 
+    // Play shoot sound at launch
+    this.playSound('shoot');
+
     // physics parameters
     const angleRad = Phaser.Math.DegToRad(angleDeg);
     const baseSpeed = 400; // pixels/s
     const vx0 = Math.cos(angleRad) * baseSpeed * powerMult;
     const vy0 = -Math.sin(angleRad) * baseSpeed * powerMult; // upward negative
     const gravity = 400; // pixels/s²
+    const windFactor = 20;
 
     // flight time from vertical motion? We'll just animate over 800ms
     const duration = 800;
@@ -629,7 +636,7 @@ export class GameScene extends Phaser.Scene {
       ease: 'Linear',
       onUpdate: () => {
         const t = tweenData.t;
-        const x = startX + vx0 * t + this.wind * t * 20; // wind horizontal drift
+        const x = startX + vx0 * t + this.wind * t * windFactor; // wind horizontal drift
         const y = startY + vy0 * t + 0.5 * gravity * t * t;
         projectile.setPosition(x, y);
       },
@@ -637,7 +644,7 @@ export class GameScene extends Phaser.Scene {
         projectile.destroy();
 
         // check if projectile lands near enemy (simple: distance to destX, destY < 20)
-        const landX = startX + vx0 * totalTime + this.wind * totalTime * 20;
+        const landX = startX + vx0 * totalTime + this.wind * totalTime * windFactor;
         const landY = startY + vy0 * totalTime + 0.5 * gravity * totalTime * totalTime;
         const distToTarget = Phaser.Math.Distance.Between(landX, landY, destX, destY);
         const hit = distToTarget < 30; // hit radius
