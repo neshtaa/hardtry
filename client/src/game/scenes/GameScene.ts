@@ -43,24 +43,36 @@ export class GameScene extends Phaser.Scene {
   // Reference to the combat SPACE handler so it can be cleaned up
   private spaceHandler: (() => void) | null = null;
 
+  // --- NEW: movement, aiming, wind ---
+  private moveBudget: number = 60;
+  private playerMoved: number = 0;
+  private aimAngle: number = 45;          // degrees (0-90)
+  private aimPower: number = 1.0;          // multiplier (0.5-1.5)
+  private wind: number = 0;
+  private aimLineGraphic!: Phaser.GameObjects.Graphics;
+  private windText!: Phaser.GameObjects.Text;
+  private paramText!: Phaser.GameObjects.Text;
+
+  // key handlers (to remove later)
+  private moveLeftKey: Phaser.Input.Keyboard.Key | null = null;
+  private moveRightKey: Phaser.Input.Keyboard.Key | null = null;
+  private aimUpKey: Phaser.Input.Keyboard.Key | null = null;
+  private aimDownKey: Phaser.Input.Keyboard.Key | null = null;
+  private powerUpKey: Phaser.Input.Keyboard.Key | null = null;
+  private powerDownKey: Phaser.Input.Keyboard.Key | null = null;
+
   constructor() {
     super({ key: 'GameScene' });
   }
 
   async create(data?: { missionIndex?: number }) {
-    // ── Reset all state that may have survived from a previous life ──
     this.resetState();
-
-    // Clear stale keyboard listeners from previous runs
     this.input.keyboard!.removeAllListeners();
-
-    // Ensure all listeners are removed when the scene is shut down
     this.events.once('shutdown', () => {
       this.input.keyboard!.removeAllListeners(true);
     });
 
     const requestedIndex = data?.missionIndex ?? 0;
-
     const loadText = this.add
       .text(400, 300, 'Loading…', { fontSize: '18px', color: '#ffffff' })
       .setOrigin(0.5);
@@ -74,28 +86,71 @@ export class GameScene extends Phaser.Scene {
     this.weaponMap = weaponMap;
     this.unitClassMap = unitClassMap;
     this.missionList = missions.length ? missions : FALLBACK_MISSIONS;
-    // Clamp index
     this.currentMissionIndex = Phaser.Math.Clamp(requestedIndex, 0, this.missionList.length - 1);
     this.mission = this.missionList[this.currentMissionIndex];
 
-    // Build terrain (always same for now)
     this.initTerrain();
-
-    // Clear loading text and build permanent objects
     this.children.removeAll(true);
     this.buildTerrain();
-
-    // Create overlay (will be shown before battle starts)
     this.createOverlay();
-
-    // Setup units and UI (they exist but hidden until battle starts)
     this.setupGameObjects();
-
-    // Show start overlay
+    this.createAimAndWindUI();
     this.showStartOverlay();
   }
 
-  // ── Reset all combat / scene state to defaults ──
+  // ── new UI elements ──
+  private createAimAndWindUI() {
+    this.aimLineGraphic = this.add.graphics();
+
+    this.windText = this.add.text(700, 20, 'Wind: 0', {
+      fontSize: '14px', color: '#ffffff',
+    }).setOrigin(1, 0);
+
+    this.paramText = this.add.text(700, 40, 'Angle: 45°  Pow: 1.0', {
+      fontSize: '14px', color: '#ffffff',
+    }).setOrigin(1, 0);
+  }
+
+  private updateAimUI() {
+    this.paramText.setText(`Angle: ${this.aimAngle}°  Pow: ${this.aimPower.toFixed(1)}`);
+    this.redrawAimLine();
+  }
+
+  private redrawAimLine() {
+    this.aimLineGraphic.clear();
+    if (!this.player || !this.player.isAlive()) return;
+
+    const startX = this.player.body.x;
+    const startY = this.player.body.y - 25;
+
+    // simulate a few steps to draw dots
+    const angleRad = Phaser.Math.DegToRad(this.aimAngle);
+    const speed = 400 * this.aimPower; // arbitrary base speed
+    const g = 300; // gravity
+
+    const vx = Math.cos(angleRad) * speed;
+    const vy = -Math.sin(angleRad) * speed;
+
+    const steps = 20;
+    const dt = 0.04;
+
+    this.aimLineGraphic.lineStyle(1, 0xffff00, 0.6);
+    let px = startX;
+    let py = startY;
+    let t = 0;
+    for (let i = 0; i < steps; i++) {
+      const nextT = t + dt;
+      const x = startX + vx * nextT + this.wind * nextT * 30; // wind factor
+      const y = startY + vy * nextT + 0.5 * g * nextT * nextT;
+      this.aimLineGraphic.fillStyle(0xffff00, 0.6);
+      this.aimLineGraphic.fillCircle(x, y, 2);
+      px = x;
+      py = y;
+      t = nextT;
+    }
+  }
+
+  // ---- Reset all combat / scene state to defaults ──
   private resetState(): void {
     this.isPlayerTurn = true;
     this.isAnimating = false;
@@ -103,23 +158,21 @@ export class GameScene extends Phaser.Scene {
     this.gameOver = false;
     this.spaceHandler = null;
     this.damageTween = null;
+    this.playerMoved = 0;
+    this.aimAngle = 45;
+    this.aimPower = 1.0;
+    this.wind = 0;
 
-    // Clear the overlay references (they will be re‑created in create)
-    // (For safety, destroy if they exist from a previous run)
-    // They are re‑assigned in createOverlay anyway.
     this.overlayContainer = undefined as unknown as Phaser.GameObjects.Container;
     this.overlayBg = undefined as unknown as Phaser.GameObjects.Rectangle;
     this.overlayTitle = undefined as unknown as Phaser.GameObjects.Text;
     this.overlaySubtitle = undefined as unknown as Phaser.GameObjects.Text;
 
-    // Clear any unit references (they will be re‑created in setupGameObjects)
-    // The old SimpleUnit instances are destroyed when children are removed
     this.player = undefined as unknown as SimpleUnit;
     this.ai = undefined as unknown as SimpleUnit;
   }
 
-  // ---- Load methods (unchanged structure) -----------------------------------
-
+  // ---- Load methods (unchanged) --------------------------------------------
   private async loadWeapons(): Promise<Map<string, WeaponDef>> {
     const backendUrl = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
     const url = `${backendUrl}/weapons`;
@@ -127,9 +180,7 @@ export class GameScene extends Phaser.Scene {
       const res = await fetch(url);
       if (!res.ok) throw new Error(`Failed to fetch weapons: ${res.statusText}`);
       const weapons: WeaponDef[] = await res.json();
-      const map = new Map<string, WeaponDef>();
-      for (const w of weapons) map.set(w.id, w);
-      return map;
+      return new Map(weapons.map(w => [w.id, w]));
     } catch (err) {
       console.warn('Could not reach backend – using fallback weapon definitions', err);
       return new Map(FALLBACK_WEAPONS.map(w => [w.id, w]));
@@ -143,9 +194,7 @@ export class GameScene extends Phaser.Scene {
       const res = await fetch(url);
       if (!res.ok) throw new Error(`Failed to fetch unit classes: ${res.statusText}`);
       const classes: UnitClassDef[] = await res.json();
-      const map = new Map<string, UnitClassDef>();
-      for (const c of classes) map.set(c.id, c);
-      return map;
+      return new Map(classes.map(c => [c.id, c]));
     } catch (err) {
       console.warn('Could not reach backend – using fallback unit classes', err);
       return new Map(FALLBACK_UNIT_CLASSES.map(c => [c.id, c]));
@@ -165,8 +214,7 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  // ---- Terrain ---------------------------------------------------------------
-
+  // ---- Terrain (unchanged) -------------------------------------------------
   private initTerrain(): void {
     this.terrainHeights = new Array(800);
     for (let x = 0; x < 800; x++) {
@@ -222,8 +270,7 @@ export class GameScene extends Phaser.Scene {
     if (unit.body.y < standY) unit.setY(standY);
   }
 
-  // ---- Overlay system --------------------------------------------------------
-
+  // ---- Overlay system (unchanged) ------------------------------------------
   private createOverlay(): void {
     this.overlayBg = this.add.rectangle(400, 300, 800, 600, 0x000000, 0.7);
     this.overlayTitle = this.add.text(400, 250, '', { fontSize: '36px', color: '#ffffff' }).setOrigin(0.5);
@@ -241,7 +288,6 @@ export class GameScene extends Phaser.Scene {
     this.battleStarted = false;
     this.gameOver = false;
 
-    // Use once so it auto-removes after being pressed
     this.input.keyboard!.once('keydown-SPACE', () => {
       if (!this.battleStarted && this.overlayContainer.visible) {
         this.battleStarted = true;
@@ -252,7 +298,6 @@ export class GameScene extends Phaser.Scene {
   }
 
   private showResultOverlay(victory: boolean): void {
-    // Hide turn text and damage text before showing result
     this.turnText.setVisible(false);
     if (this.damageTween) {
       this.damageTween.stop();
@@ -272,13 +317,14 @@ export class GameScene extends Phaser.Scene {
     this.isAnimating = true;
     this.isPlayerTurn = false;
 
-    // Remove any stale combat SPACE listener before registering result keys
     if (this.spaceHandler) {
       this.input.keyboard!.off('keydown-SPACE', this.spaceHandler);
       this.spaceHandler = null;
     }
 
-    // Handle keyboard inputs after game over
+    // play sound
+    this.playSound(victory ? 'victory' : 'defeat');
+
     this.input.keyboard!.once('keydown-R', () => {
       this.scene.restart({ missionIndex: this.currentMissionIndex });
     });
@@ -292,8 +338,7 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  // ---- Unit resolution -------------------------------------------------------
-
+  // ---- Unit resolution (unchanged) -----------------------------------------
   private parseColor(colorStr: string): number {
     if (!colorStr) return 0xffffff;
     if (colorStr.startsWith('#'))
@@ -319,7 +364,6 @@ export class GameScene extends Phaser.Scene {
     const colorStr = cfg.color || archetype.color;
     const color = this.parseColor(colorStr);
 
-    // Look up weapon name
     const weaponDef = this.weaponMap.get(weaponId);
     const weaponName = weaponDef ? weaponDef.name : weaponId;
 
@@ -337,8 +381,6 @@ export class GameScene extends Phaser.Scene {
     const playerResolved = this.resolveUnitConfig(playerCfg);
     const aiResolved = this.resolveUnitConfig(aiCfg);
 
-    // If the mission data did not explicitly define a colour for the enemy unit,
-    // force it to red so the enemy is always visually distinguishable from the player.
     if (aiCfg.color === undefined) {
       aiResolved.color = 0xff4444;
     }
@@ -366,25 +408,81 @@ export class GameScene extends Phaser.Scene {
     this.player.setY(playerGround - 25);
     this.ai.setY(aiGround - 25);
 
-    // UI texts (hidden until battle start)
     this.missionNameText = this.add.text(400, 20, this.mission.name, { fontSize: '20px', color: '#cccccc' }).setOrigin(0.5);
     this.turnText = this.add.text(400, 60, '', { fontSize: '28px', color: '#ffffff' }).setOrigin(0.5);
     this.statusText = this.add.text(400, 100, '', { fontSize: '18px', color: '#cccccc' }).setOrigin(0.5);
   }
 
+  // ---- startBattle (set up keys) -------------------------------------------
   private startBattle(): void {
-    // Enable input for firing
+    this.generateWind();
+
+    this.moveLeftKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.LEFT);
+    this.moveRightKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.RIGHT);
+    this.aimUpKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.UP);
+    this.aimDownKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.DOWN);
+    this.powerUpKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.Q);
+    this.powerDownKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.E);
+
     this.spaceHandler = () => {
       if (this.isPlayerTurn && !this.isAnimating && this.player.isAlive()) {
         this.playerAttack();
       }
     };
     this.input.keyboard!.on('keydown-SPACE', this.spaceHandler);
-    this.turnText.setText('Player Turn – press SPACE to fire');
+    this.turnText.setText('Player Turn – move arrows, aim up/down, Q/E power, SPACE fire');
   }
 
-  // ---- AI helpers ------------------------------------------------------------
+  // ---- movement / aim update (called each frame if needed) ------------------
+  update() {
+    if (!this.battleStarted || this.gameOver) return;
+    if (!this.isPlayerTurn || this.isAnimating || !this.player.isAlive()) return;
 
+    // movement
+    const moveStep = 6; // pixels per key press (frame)
+    if (Phaser.Input.Keyboard.JustDown(this.moveLeftKey!)) {
+      const newX = Math.max(0, this.player.body.x - moveStep);
+      const moved = this.player.body.x - newX;
+      if (this.playerMoved + moved <= this.moveBudget) {
+        this.player.body.x = newX;
+        this.playerMoved += moved;
+        this.applyGravity(this.player);
+        this.redrawAimLine();
+      }
+    }
+    if (Phaser.Input.Keyboard.JustDown(this.moveRightKey!)) {
+      const newX = Math.min(800, this.player.body.x + moveStep);
+      const moved = newX - this.player.body.x;
+      if (this.playerMoved + moved <= this.moveBudget) {
+        this.player.body.x = newX;
+        this.playerMoved += moved;
+        this.applyGravity(this.player);
+        this.redrawAimLine();
+      }
+    }
+
+    // aim angle
+    if (Phaser.Input.Keyboard.JustDown(this.aimUpKey!)) {
+      this.aimAngle = Math.min(90, this.aimAngle + 3);
+      this.updateAimUI();
+    }
+    if (Phaser.Input.Keyboard.JustDown(this.aimDownKey!)) {
+      this.aimAngle = Math.max(0, this.aimAngle - 3);
+      this.updateAimUI();
+    }
+
+    // power
+    if (Phaser.Input.Keyboard.JustDown(this.powerUpKey!)) {
+      this.aimPower = Math.min(1.5, this.aimPower + 0.1);
+      this.updateAimUI();
+    }
+    if (Phaser.Input.Keyboard.JustDown(this.powerDownKey!)) {
+      this.aimPower = Math.max(0.5, this.aimPower - 0.1);
+      this.updateAimUI();
+    }
+  }
+
+  // ---- AI helpers ----------------------------------------------------------
   private getAITargets(): SimpleUnit[] {
     const targets: SimpleUnit[] = [];
     if (this.player.isAlive()) targets.push(this.player);
@@ -398,12 +496,25 @@ export class GameScene extends Phaser.Scene {
     };
   }
 
-  // ---- Turn logic ------------------------------------------------------------
+  // new: compute AI aim angle and power
+  private computeAIAim(from: SimpleUnit, to: SimpleUnit): { angle: number; power: number } {
+    const dx = to.body.x - from.body.x;
+    const dy = (from.body.y - 25) - (to.body.y - 25); // source higher is negative
+    // rough angle (ignoring wind) – we'll just aim directly then add skill variance
+    const baseAngle = Phaser.Math.RadToDeg(Math.atan2(-dy, dx)); // angle above horizontal
+    // clamp to 5-85
+    const clamped = Phaser.Math.Clamp(baseAngle, 5, 85);
+    const skillVariance = Phaser.Math.FloatBetween(-8, 8); // AI skill
+    return {
+      angle: Phaser.Math.Clamp(clamped + skillVariance, 5, 85),
+      power: Phaser.Math.FloatBetween(0.9, 1.1),
+    };
+  }
 
+  // ---- Turn logic ----------------------------------------------------------
   private playerAttack() {
     this.isAnimating = true;
 
-    // Reset damage text for the new turn
     if (this.damageTween) {
       this.damageTween.stop();
       this.damageTween = null;
@@ -411,10 +522,15 @@ export class GameScene extends Phaser.Scene {
     this.statusText.setAlpha(0);
     this.statusText.setText('');
 
-    // Immediately indicate AI's upcoming turn
     this.turnText.setText('AI Turn – thinking…');
+
+    // use current aim & power
+    const angle = this.aimAngle;
+    const power = this.aimPower;
     const damage = this.getWeaponDamage(this.player.weaponId);
-    this.fireProjectile(this.player, this.ai, damage, () => {
+
+    this.fireProjectile(this.player, this.ai, damage, angle, power, () => {
+      this.playerMoved = 0;
       if (!this.player.isAlive() || !this.ai.isAlive()) {
         this.showResultOverlay(this.player.isAlive());
         return;
@@ -426,13 +542,20 @@ export class GameScene extends Phaser.Scene {
   private aiTurn() {
     this.isPlayerTurn = false;
 
-    // Reset damage text for the new turn
     if (this.damageTween) {
       this.damageTween.stop();
       this.damageTween = null;
     }
     this.statusText.setAlpha(0);
     this.statusText.setText('');
+
+    // AI movement (simple random shift within budget)
+    const aiMoveBudget = 40;
+    const shift = Phaser.Math.Between(0, aiMoveBudget);
+    const direction = Phaser.Math.Between(0, 1) === 0 ? -1 : 1;
+    const newX = Phaser.Math.Clamp(this.ai.body.x + shift * direction, 0, 800);
+    this.ai.body.x = newX;
+    this.applyGravity(this.ai);
 
     this.time.delayedCall(800, () => {
       const targets = this.getAITargets();
@@ -442,8 +565,12 @@ export class GameScene extends Phaser.Scene {
       }
       const target = targets[0];
       const damage = this.getWeaponDamage(this.ai.weaponId);
+
+      // AI uses computed aim
+      const { angle, power } = this.computeAIAim(this.ai, target);
       const aimPoint = this.getAIAimPoint(target);
-      this.fireProjectile(this.ai, target, damage, () => {
+
+      this.fireProjectile(this.ai, target, damage, angle, power, () => {
         if (!this.player.isAlive() || !this.ai.isAlive()) {
           this.showResultOverlay(this.player.isAlive());
           return;
@@ -451,70 +578,105 @@ export class GameScene extends Phaser.Scene {
         this.time.delayedCall(500, () => {
           this.isPlayerTurn = true;
           this.isAnimating = false;
-          this.turnText.setText('Player Turn – press SPACE to fire');
+          this.playerMoved = 0;
+          this.generateWind();
+          this.updateAimUI();
+          this.turnText.setText('Player Turn – move arrows, aim up/down, Q/E power, SPACE fire');
         });
       }, aimPoint.x, aimPoint.y);
     });
   }
 
-  // ---- Projectile / damage ---------------------------------------------------
-
+  // ---- Projectile physics --------------------------------------------------
   private fireProjectile(
-    from: SimpleUnit, to: SimpleUnit, damage: number,
-    onComplete: () => void, targetX?: number, targetY?: number,
+    from: SimpleUnit, to: SimpleUnit,
+    damage: number,
+    angleDeg: number, powerMult: number,
+    onComplete: () => void,
+    targetAimX?: number, targetAimY?: number,
   ) {
     const color = this.getProjectileColor(from.weaponId);
     const weaponDef = this.getWeaponDef(from.weaponId);
     const explosionRadius = weaponDef ? weaponDef.explosionRadius : 30;
-    const projectile = this.add.circle(from.body.x, from.body.y - 25, 6, color);
-    const destX = targetX !== undefined ? targetX : to.body.x;
-    const destY = targetY !== undefined ? targetY : to.body.y - 25;
 
-    // Parabolic arc
-    const startX = projectile.x;
-    const startY = projectile.y;
-    const endX = destX;
-    const endY = destY;
-    const horizontalDist = Math.abs(endX - startX);
-    const parabolaHeight = Math.max(120, horizontalDist * 0.6);
-    const tweenData = { progress: 0 };
+    const startX = from.body.x;
+    const startY = from.body.y - 25;
+
+    // determine target position (used only for collision detection? we'll just land on target)
+    const destX = targetAimX !== undefined ? targetAimX : to.body.x;
+    const destY = targetAimY !== undefined ? targetAimY : to.body.y - 25;
+
+    const projectile = this.add.circle(startX, startY, 6, color);
+
+    // physics parameters
+    const angleRad = Phaser.Math.DegToRad(angleDeg);
+    const baseSpeed = 400; // pixels/s
+    const vx0 = Math.cos(angleRad) * baseSpeed * powerMult;
+    const vy0 = -Math.sin(angleRad) * baseSpeed * powerMult; // upward negative
+    const gravity = 400; // pixels/s²
+
+    // flight time from vertical motion? We'll just animate over 800ms
+    const duration = 800;
+    const totalTime = duration / 1000; // seconds
+
+    // We'll compute position using t from 0 to totalTime, mapping tween progress to time
+    const tweenData = { t: 0 };
 
     this.tweens.add({
       targets: tweenData,
-      progress: 1,
-      duration: 800,
-      ease: 'Power2',
+      t: totalTime,
+      duration: duration,
+      ease: 'Linear',
       onUpdate: () => {
-        const t = tweenData.progress;
-        const x = startX + (endX - startX) * t;
-        const y = startY + (endY - startY) * t - parabolaHeight * 4 * t * (1 - t);
+        const t = tweenData.t;
+        const x = startX + vx0 * t + this.wind * t * 20; // wind horizontal drift
+        const y = startY + vy0 * t + 0.5 * gravity * t * t;
         projectile.setPosition(x, y);
       },
       onComplete: () => {
         projectile.destroy();
-        to.takeDamage(damage);
 
-        // Set and fade damage text
-        this.statusText.setText(`${from.name} dealt ${damage} damage`);
-        this.statusText.setAlpha(1);
+        // check if projectile lands near enemy (simple: distance to destX, destY < 20)
+        const landX = startX + vx0 * totalTime + this.wind * totalTime * 20;
+        const landY = startY + vy0 * totalTime + 0.5 * gravity * totalTime * totalTime;
+        const distToTarget = Phaser.Math.Distance.Between(landX, landY, destX, destY);
+        const hit = distToTarget < 30; // hit radius
 
-        // Stop any previous damage fade and start new one
-        if (this.damageTween) {
-          this.damageTween.stop();
-          this.damageTween = null;
-        }
-        this.damageTween = this.tweens.add({
-          targets: this.statusText,
-          alpha: 0,
-          delay: 1000,
-          duration: 600,
-          onComplete: () => {
+        if (hit) {
+          to.takeDamage(damage);
+          this.statusText.setText(`${from.name} dealt ${damage} damage`);
+          this.statusText.setAlpha(1);
+          if (this.damageTween) {
+            this.damageTween.stop();
             this.damageTween = null;
-          },
-        });
+          }
+          this.damageTween = this.tweens.add({
+            targets: this.statusText,
+            alpha: 0,
+            delay: 1000,
+            duration: 600,
+            onComplete: () => { this.damageTween = null; },
+          });
+        } else {
+          this.statusText.setText(`${from.name} missed!`);
+          this.statusText.setAlpha(1);
+          if (this.damageTween) {
+            this.damageTween.stop();
+            this.damageTween = null;
+          }
+          this.damageTween = this.tweens.add({
+            targets: this.statusText,
+            alpha: 0,
+            delay: 1500,
+            duration: 600,
+            onComplete: () => { this.damageTween = null; },
+          });
+        }
 
-        // Explosion effect
-        const explosion = this.add.circle(destX, destY, 6, 0xffff00, 0.6);
+        // explosion always at impact point
+        const explosionX = landX;
+        const explosionY = landY;
+        const explosion = this.add.circle(explosionX, explosionY, 6, 0xffff00, 0.6);
         this.tweens.add({
           targets: explosion,
           scaleX: explosionRadius / 6,
@@ -525,12 +687,14 @@ export class GameScene extends Phaser.Scene {
           onComplete: () => explosion.destroy(),
         });
 
-        this.destroyTerrain(destX, destY, explosionRadius);
+        this.playSound('explosion');
+
+        this.destroyTerrain(explosionX, explosionY, explosionRadius);
         this.applyGravity(this.player);
         this.applyGravity(this.ai);
 
-        // If the target died, play a death animation before calling onComplete
-        const targetDead = !to.isAlive();
+        // death animation
+        const targetDead = hit && !to.isAlive();
         if (targetDead) {
           to.playDeathAnimation(() => {
             onComplete();
@@ -542,8 +706,65 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  // ---- Weapon lookups -------------------------------------------------------
+  // ---- Wind generation -----------------------------------------------------
+  private generateWind() {
+    this.wind = Phaser.Math.FloatBetween(-3, 3);
+    this.windText.setText(`Wind: ${this.wind.toFixed(1)}`);
+  }
 
+  // ---- Sound effects (simple Web Audio) ------------------------------------
+  private playSound(type: 'shoot' | 'explosion' | 'victory' | 'defeat') {
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      const now = ctx.currentTime;
+      switch (type) {
+        case 'shoot':
+          osc.frequency.setValueAtTime(300, now);
+          osc.type = 'square';
+          gain.gain.setValueAtTime(0.15, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+          osc.start(now);
+          osc.stop(now + 0.1);
+          break;
+        case 'explosion':
+          osc.frequency.setValueAtTime(80, now);
+          osc.type = 'sawtooth';
+          gain.gain.setValueAtTime(0.2, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+          osc.start(now);
+          osc.stop(now + 0.3);
+          break;
+        case 'victory':
+          osc.frequency.setValueAtTime(523, now);
+          osc.frequency.setValueAtTime(659, now + 0.15);
+          osc.frequency.setValueAtTime(784, now + 0.3);
+          osc.type = 'sine';
+          gain.gain.setValueAtTime(0.2, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+          osc.start(now);
+          osc.stop(now + 0.5);
+          break;
+        case 'defeat':
+          osc.frequency.setValueAtTime(200, now);
+          osc.frequency.linearRampToValueAtTime(100, now + 0.4);
+          osc.type = 'sawtooth';
+          gain.gain.setValueAtTime(0.15, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+          osc.start(now);
+          osc.stop(now + 0.5);
+          break;
+      }
+    } catch {
+      // audio not available – silently ignore
+    }
+  }
+
+  // ---- Weapon lookups (unchanged) ------------------------------------------
   private getWeaponDef(id: string): WeaponDef | undefined {
     return this.weaponMap.get(id);
   }
