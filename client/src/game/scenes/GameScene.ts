@@ -4,9 +4,13 @@ import {
   UnitClassDef,
   UnitConfig,
   MissionDef,
-  SimpleUnitConfig,
 } from '../types';
 import { SimpleUnit } from '../SimpleUnit';
+import {
+  FALLBACK_MISSIONS,
+  FALLBACK_WEAPONS,
+  FALLBACK_UNIT_CLASSES,
+} from '../fallbackData';
 
 // ---- GameScene class --------------------------------------------------------
 
@@ -69,7 +73,7 @@ export class GameScene extends Phaser.Scene {
 
     this.weaponMap = weaponMap;
     this.unitClassMap = unitClassMap;
-    this.missionList = missions.length ? missions : [this.getFallbackMission()];
+    this.missionList = missions.length ? missions : FALLBACK_MISSIONS;
     // Clamp index
     this.currentMissionIndex = Phaser.Math.Clamp(requestedIndex, 0, this.missionList.length - 1);
     this.mission = this.missionList[this.currentMissionIndex];
@@ -128,20 +132,7 @@ export class GameScene extends Phaser.Scene {
       return map;
     } catch (err) {
       console.warn('Could not reach backend – using fallback weapon definitions', err);
-      const map = new Map<string, WeaponDef>();
-      map.set('basic_cannon', {
-        id: 'basic_cannon', name: 'Basic Cannon', damage: 3, range: 200,
-        projectileColor: '#ffcc00', explosionRadius: 30,
-      });
-      map.set('sniper_cannon', {
-        id: 'sniper_cannon', name: 'Sniper Cannon', damage: 5, range: 400,
-        projectileColor: '#ff4444', explosionRadius: 10,
-      });
-      map.set('cluster_bomb', {
-        id: 'cluster_bomb', name: 'Cluster Bomb', damage: 1, range: 150,
-        projectileColor: '#ff8800', explosionRadius: 60,
-      });
-      return map;
+      return new Map(FALLBACK_WEAPONS.map(w => [w.id, w]));
     }
   }
 
@@ -157,14 +148,7 @@ export class GameScene extends Phaser.Scene {
       return map;
     } catch (err) {
       console.warn('Could not reach backend – using fallback unit classes', err);
-      const map = new Map<string, UnitClassDef>();
-      map.set('soldier', { id: 'soldier', name: 'Soldier', baseHp: 10,
-        allowedWeaponIds: ['basic_cannon', 'sniper_cannon'], color: '0x4488ff', description: 'Balanced all-rounder' });
-      map.set('scout', { id: 'scout', name: 'Scout', baseHp: 8,
-        allowedWeaponIds: ['sniper_cannon'], color: '0x44ff44', description: 'Fast, fragile, accurate' });
-      map.set('heavy', { id: 'heavy', name: 'Heavy', baseHp: 15,
-        allowedWeaponIds: ['basic_cannon', 'cluster_bomb'], color: '0xff4444', description: 'Slow but tough, area damage' });
-      return map;
+      return new Map(FALLBACK_UNIT_CLASSES.map(c => [c.id, c]));
     }
   }
 
@@ -177,28 +161,8 @@ export class GameScene extends Phaser.Scene {
       return await res.json();
     } catch (err) {
       console.warn('Could not reach backend – using fallback mission list', err);
-      return [this.getFallbackMission(), this.getSecondMission()];
+      return FALLBACK_MISSIONS;
     }
-  }
-
-  private getFallbackMission(): MissionDef {
-    return {
-      id: 'fallback_demo', name: 'Training Ground',
-      units: [
-        { id: 'player', archetypeId: 'soldier', weaponId: 'basic_cannon', x: 150, y: 400, side: 'player' },
-        { id: 'ai', archetypeId: 'heavy', weaponId: 'cluster_bomb', x: 650, y: 400, side: 'enemy' },
-      ],
-    };
-  }
-
-  private getSecondMission(): MissionDef {
-    return {
-      id: 'second_fallback', name: 'Second Battle',
-      units: [
-        { id: 'player', archetypeId: 'scout', weaponId: 'sniper_cannon', x: 150, y: 400, side: 'player' },
-        { id: 'ai', archetypeId: 'soldier', weaponId: 'basic_cannon', x: 650, y: 400, side: 'enemy' },
-      ],
-    };
   }
 
   // ---- Terrain ---------------------------------------------------------------
@@ -330,6 +294,13 @@ export class GameScene extends Phaser.Scene {
 
   // ---- Unit resolution -------------------------------------------------------
 
+  private parseColor(colorStr: string): number {
+    if (!colorStr) return 0xffffff;
+    if (colorStr.startsWith('#'))
+      return Phaser.Display.Color.HexStringToColor(colorStr).color;
+    return Number(colorStr);
+  }
+
   private resolveUnitConfig(cfg: UnitConfig): { hp: number; weaponId: string; color: number; weaponName: string } {
     const archetypeId = cfg.archetypeId || 'soldier';
     const archetype = this.unitClassMap.get(archetypeId);
@@ -346,7 +317,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     const colorStr = cfg.color || archetype.color;
-    const color = Number(colorStr); // Previously parseInt, now Number
+    const color = this.parseColor(colorStr);
 
     // Look up weapon name
     const weaponDef = this.weaponMap.get(weaponId);
@@ -365,9 +336,6 @@ export class GameScene extends Phaser.Scene {
 
     const playerResolved = this.resolveUnitConfig(playerCfg);
     const aiResolved = this.resolveUnitConfig(aiCfg);
-
-    // Bug 1: force enemy color to red
-    aiResolved.color = 0xff4444;
 
     this.player = new SimpleUnit(this, {
       x: playerCfg.x, y: playerCfg.y,
@@ -418,7 +386,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private getAIAimPoint(target: SimpleUnit): { x: number; y: number } {
-    return { x: target.body.x, y: target.body.y - 25 };
+    return {
+      x: target.body.x + Phaser.Math.Between(-35, 35),
+      y: target.body.y - 25,
+    };
   }
 
   // ---- Turn logic ------------------------------------------------------------
@@ -448,7 +419,6 @@ export class GameScene extends Phaser.Scene {
 
   private aiTurn() {
     this.isPlayerTurn = false;
-    this.statusText.setText('');
 
     // Reset damage text for the new turn
     if (this.damageTween) {

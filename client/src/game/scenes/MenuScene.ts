@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { MissionDef } from '../types';
+import { FALLBACK_MISSIONS } from '../fallbackData';
 
 export class MenuScene extends Phaser.Scene {
   private missions: MissionDef[] = [];
@@ -28,24 +29,7 @@ export class MenuScene extends Phaser.Scene {
       this.missions = await this.loadMissions();
     } catch {
       console.warn('Using fallback mission list');
-      this.missions = [
-        {
-          id: 'fallback_demo',
-          name: 'Training Ground',
-          units: [
-            { id: 'player', archetypeId: 'soldier', weaponId: 'basic_cannon', x: 150, y: 400, side: 'player' },
-            { id: 'ai', archetypeId: 'heavy', weaponId: 'cluster_bomb', x: 650, y: 400, side: 'enemy' },
-          ],
-        },
-        {
-          id: 'second_fallback',
-          name: 'Second Battle',
-          units: [
-            { id: 'player', archetypeId: 'scout', weaponId: 'sniper_cannon', x: 150, y: 400, side: 'player' },
-            { id: 'ai', archetypeId: 'soldier', weaponId: 'basic_cannon', x: 650, y: 400, side: 'enemy' },
-          ],
-        },
-      ];
+      this.missions = FALLBACK_MISSIONS;
     }
 
     hint.destroy();
