@@ -337,6 +337,12 @@ export class GameScene extends Phaser.Scene {
     const playerResolved = this.resolveUnitConfig(playerCfg);
     const aiResolved = this.resolveUnitConfig(aiCfg);
 
+    // If the mission data did not explicitly define a colour for the enemy unit,
+    // force it to red so the enemy is always visually distinguishable from the player.
+    if (aiCfg.color === undefined) {
+      aiResolved.color = 0xff4444;
+    }
+
     this.player = new SimpleUnit(this, {
       x: playerCfg.x, y: playerCfg.y,
       hp: playerResolved.hp,
