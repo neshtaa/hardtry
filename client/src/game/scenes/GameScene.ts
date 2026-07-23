@@ -12,10 +12,6 @@ import {
   FALLBACK_UNIT_CLASSES,
 } from '../fallbackData';
 
-// ---- Team colours (single source of truth) ----
-const PLAYER_COLOR = 0x44ff44;
-const ENEMY_COLOR = 0xff4444;
-
 // ---- GameScene class --------------------------------------------------------
 
 export class GameScene extends Phaser.Scene {
@@ -377,10 +373,6 @@ export class GameScene extends Phaser.Scene {
     const playerResolved = this.resolveUnitConfig(playerCfg);
     const aiResolved = this.resolveUnitConfig(aiCfg);
 
-    // Override colours to guarantee team‑distinct appearance
-    playerResolved.color = PLAYER_COLOR;
-    aiResolved.color = ENEMY_COLOR;
-
     this.player = new SimpleUnit(this, {
       x: playerCfg.x, y: playerCfg.y,
       hp: playerResolved.hp,
@@ -405,7 +397,7 @@ export class GameScene extends Phaser.Scene {
     this.ai.setY(aiGround - 25);
 
     this.missionNameText = this.add.text(400, 20, this.mission.name, { fontSize: '20px', color: '#cccccc' }).setOrigin(0.5);
-    this.turnText = this.add.text(400, 60, '', { fontSize: '28px', color: '#ffffff' }).setOrigin(0.5);
+    this.turnText = this.add.text(400, 60, '', { fontSize: '16px', color: '#ffffff' }).setOrigin(0.5);
     this.statusText = this.add.text(400, 100, '', { fontSize: '18px', color: '#cccccc' }).setOrigin(0.5);
   }
 
@@ -413,8 +405,32 @@ export class GameScene extends Phaser.Scene {
     this.generateWind();
     this.playerMoved = 0; // fresh budget
 
-    this.moveLeftKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.LEFT);
-    this.moveRightKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.RIGHT);
+    this.input.keyboard!.on('keydown-LEFT', () => {
+      if (this.isPlayerTurn && !this.isAnimating && this.player.isAlive()) {
+        const newX = Math.max(0, this.player.body.x - 6);
+        const moved = this.player.body.x - newX;
+        if (this.playerMoved + moved <= this.moveBudget) {
+          this.player.setX(newX);
+          this.playerMoved += moved;
+          this.applyGravity(this.player);
+          this.redrawAimLine();
+        }
+      }
+    });
+
+    this.input.keyboard!.on('keydown-RIGHT', () => {
+      if (this.isPlayerTurn && !this.isAnimating && this.player.isAlive()) {
+        const newX = Math.min(800, this.player.body.x + 6);
+        const moved = newX - this.player.body.x;
+        if (this.playerMoved + moved <= this.moveBudget) {
+          this.player.setX(newX);
+          this.playerMoved += moved;
+          this.applyGravity(this.player);
+          this.redrawAimLine();
+        }
+      }
+    });
+
     this.aimUpKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.UP);
     this.aimDownKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.DOWN);
     this.powerUpKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.Q);
@@ -432,29 +448,6 @@ export class GameScene extends Phaser.Scene {
   update() {
     if (!this.battleStarted || this.gameOver) return;
     if (!this.isPlayerTurn || this.isAnimating || !this.player.isAlive()) return;
-
-    // movement
-    const moveStep = 6;
-    if (Phaser.Input.Keyboard.JustDown(this.moveLeftKey!)) {
-      const newX = Math.max(0, this.player.body.x - moveStep);
-      const moved = this.player.body.x - newX;
-      if (this.playerMoved + moved <= this.moveBudget) {
-        this.player.setX(newX);
-        this.playerMoved += moved;
-        this.applyGravity(this.player);
-        this.redrawAimLine();
-      }
-    }
-    if (Phaser.Input.Keyboard.JustDown(this.moveRightKey!)) {
-      const newX = Math.min(800, this.player.body.x + moveStep);
-      const moved = newX - this.player.body.x;
-      if (this.playerMoved + moved <= this.moveBudget) {
-        this.player.setX(newX);
-        this.playerMoved += moved;
-        this.applyGravity(this.player);
-        this.redrawAimLine();
-      }
-    }
 
     // aim angle
     if (Phaser.Input.Keyboard.JustDown(this.aimUpKey!)) {
