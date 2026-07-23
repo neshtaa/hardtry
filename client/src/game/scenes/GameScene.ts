@@ -381,9 +381,9 @@ export class GameScene extends Phaser.Scene {
     const playerResolved = this.resolveUnitConfig(playerCfg);
     const aiResolved = this.resolveUnitConfig(aiCfg);
 
-    if (aiCfg.color === undefined) {
-      aiResolved.color = 0xff4444;
-    }
+    // Force player green, enemy red
+    playerResolved.color = 0x44ff44;
+    aiResolved.color = 0xff4444;
 
     this.player = new SimpleUnit(this, {
       x: playerCfg.x, y: playerCfg.y,
