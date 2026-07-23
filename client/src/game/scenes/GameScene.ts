@@ -12,6 +12,10 @@ import {
   FALLBACK_UNIT_CLASSES,
 } from '../fallbackData';
 
+// ---- Team colours (single source of truth) ----
+const PLAYER_COLOR = 0x44ff44;
+const ENEMY_COLOR = 0xff4444;
+
 // ---- GameScene class --------------------------------------------------------
 
 export class GameScene extends Phaser.Scene {
@@ -43,7 +47,7 @@ export class GameScene extends Phaser.Scene {
   // Reference to the combat SPACE handler so it can be cleaned up
   private spaceHandler: (() => void) | null = null;
 
-  // --- NEW: movement, aiming, wind ---
+  // --- movement, aiming, wind ---
   private moveBudget: number = 60;
   private playerMoved: number = 0;
   private aimAngle: number = 45;          // degrees (0-90)
@@ -53,7 +57,7 @@ export class GameScene extends Phaser.Scene {
   private windText!: Phaser.GameObjects.Text;
   private paramText!: Phaser.GameObjects.Text;
 
-  // key handlers (to remove later)
+  // key handlers
   private moveLeftKey: Phaser.Input.Keyboard.Key | null = null;
   private moveRightKey: Phaser.Input.Keyboard.Key | null = null;
   private aimUpKey: Phaser.Input.Keyboard.Key | null = null;
@@ -98,7 +102,6 @@ export class GameScene extends Phaser.Scene {
     this.showStartOverlay();
   }
 
-  // ── new UI elements ──
   private createAimAndWindUI() {
     this.aimLineGraphic = this.add.graphics();
 
@@ -147,7 +150,6 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  // ---- Reset all combat / scene state to defaults ──
   private resetState(): void {
     this.isPlayerTurn = true;
     this.isAnimating = false;
@@ -169,7 +171,6 @@ export class GameScene extends Phaser.Scene {
     this.ai = undefined as unknown as SimpleUnit;
   }
 
-  // ---- Load methods (unchanged) --------------------------------------------
   private async loadWeapons(): Promise<Map<string, WeaponDef>> {
     const backendUrl = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
     const url = `${backendUrl}/weapons`;
@@ -211,7 +212,6 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  // ---- Terrain (unchanged) -------------------------------------------------
   private initTerrain(): void {
     this.terrainHeights = new Array(800);
     for (let x = 0; x < 800; x++) {
@@ -267,7 +267,6 @@ export class GameScene extends Phaser.Scene {
     if (unit.body.y < standY) unit.setY(standY);
   }
 
-  // ---- Overlay system (unchanged) ------------------------------------------
   private createOverlay(): void {
     this.overlayBg = this.add.rectangle(400, 300, 800, 600, 0x000000, 0.7);
     this.overlayTitle = this.add.text(400, 250, '', { fontSize: '36px', color: '#ffffff' }).setOrigin(0.5);
@@ -295,7 +294,6 @@ export class GameScene extends Phaser.Scene {
   }
 
   private showResultOverlay(victory: boolean): void {
-    // Clear aim line graphic before showing result
     this.aimLineGraphic.clear();
 
     this.turnText.setVisible(false);
@@ -322,7 +320,6 @@ export class GameScene extends Phaser.Scene {
       this.spaceHandler = null;
     }
 
-    // play sound
     this.playSound(victory ? 'victory' : 'defeat');
 
     this.input.keyboard!.once('keydown-R', () => {
@@ -338,7 +335,6 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  // ---- Unit resolution (unchanged) -----------------------------------------
   private parseColor(colorStr: string): number {
     if (!colorStr) return 0xffffff;
     if (colorStr.startsWith('#'))
@@ -381,9 +377,9 @@ export class GameScene extends Phaser.Scene {
     const playerResolved = this.resolveUnitConfig(playerCfg);
     const aiResolved = this.resolveUnitConfig(aiCfg);
 
-    // Force player green, enemy red
-    playerResolved.color = 0x44ff44;
-    aiResolved.color = 0xff4444;
+    // Override colours to guarantee team‑distinct appearance
+    playerResolved.color = PLAYER_COLOR;
+    aiResolved.color = ENEMY_COLOR;
 
     this.player = new SimpleUnit(this, {
       x: playerCfg.x, y: playerCfg.y,
@@ -413,9 +409,9 @@ export class GameScene extends Phaser.Scene {
     this.statusText = this.add.text(400, 100, '', { fontSize: '18px', color: '#cccccc' }).setOrigin(0.5);
   }
 
-  // ---- startBattle (set up keys) -------------------------------------------
   private startBattle(): void {
     this.generateWind();
+    this.playerMoved = 0; // fresh budget
 
     this.moveLeftKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.LEFT);
     this.moveRightKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.RIGHT);
@@ -433,13 +429,12 @@ export class GameScene extends Phaser.Scene {
     this.turnText.setText('Player Turn – move arrows, aim up/down, Q/E power, SPACE fire');
   }
 
-  // ---- movement / aim update (called each frame if needed) ------------------
   update() {
     if (!this.battleStarted || this.gameOver) return;
     if (!this.isPlayerTurn || this.isAnimating || !this.player.isAlive()) return;
 
     // movement
-    const moveStep = 6; // pixels per key press (frame)
+    const moveStep = 6;
     if (Phaser.Input.Keyboard.JustDown(this.moveLeftKey!)) {
       const newX = Math.max(0, this.player.body.x - moveStep);
       const moved = this.player.body.x - newX;
@@ -482,7 +477,6 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  // ---- AI helpers ----------------------------------------------------------
   private getAITargets(): SimpleUnit[] {
     const targets: SimpleUnit[] = [];
     if (this.player.isAlive()) targets.push(this.player);
@@ -496,22 +490,18 @@ export class GameScene extends Phaser.Scene {
     };
   }
 
-  // new: compute AI aim angle and power
   private computeAIAim(from: SimpleUnit, to: SimpleUnit): { angle: number; power: number } {
     const dx = to.body.x - from.body.x;
-    const dy = (from.body.y - 25) - (to.body.y - 25); // source higher is negative
-    // rough angle (ignoring wind) – we'll just aim directly then add skill variance
-    const baseAngle = Phaser.Math.RadToDeg(Math.atan2(-dy, dx)); // angle above horizontal
-    // clamp to 5-85
+    const dy = (from.body.y - 25) - (to.body.y - 25);
+    const baseAngle = Phaser.Math.RadToDeg(Math.atan2(-dy, dx));
     const clamped = Phaser.Math.Clamp(baseAngle, 5, 85);
-    const skillVariance = Phaser.Math.FloatBetween(-8, 8); // AI skill
+    const skillVariance = Phaser.Math.FloatBetween(-8, 8);
     return {
       angle: Phaser.Math.Clamp(clamped + skillVariance, 5, 85),
       power: Phaser.Math.FloatBetween(0.9, 1.1),
     };
   }
 
-  // ---- Turn logic ----------------------------------------------------------
   private playerAttack() {
     this.isAnimating = true;
 
@@ -524,7 +514,6 @@ export class GameScene extends Phaser.Scene {
 
     this.turnText.setText('AI Turn – thinking…');
 
-    // use current aim & power
     const angle = this.aimAngle;
     const power = this.aimPower;
     const damage = this.getWeaponDamage(this.player.weaponId);
@@ -540,7 +529,6 @@ export class GameScene extends Phaser.Scene {
   }
 
   private aiTurn() {
-    // Clear aim line during AI turn
     this.aimLineGraphic.clear();
 
     this.isPlayerTurn = false;
@@ -552,7 +540,6 @@ export class GameScene extends Phaser.Scene {
     this.statusText.setAlpha(0);
     this.statusText.setText('');
 
-    // AI movement (simple random shift within budget)
     const aiMoveBudget = 40;
     const shift = Phaser.Math.Between(0, aiMoveBudget);
     const direction = Phaser.Math.Between(0, 1) === 0 ? -1 : 1;
@@ -569,7 +556,6 @@ export class GameScene extends Phaser.Scene {
       const target = targets[0];
       const damage = this.getWeaponDamage(this.ai.weaponId);
 
-      // AI uses computed aim
       const { angle, power } = this.computeAIAim(this.ai, target);
       const aimPoint = this.getAIAimPoint(target);
 
@@ -590,7 +576,6 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  // ---- Projectile physics --------------------------------------------------
   private fireProjectile(
     from: SimpleUnit, to: SimpleUnit,
     damage: number,
@@ -605,28 +590,23 @@ export class GameScene extends Phaser.Scene {
     const startX = from.body.x;
     const startY = from.body.y - 25;
 
-    // determine target position (used only for collision detection? we'll just land on target)
     const destX = targetAimX !== undefined ? targetAimX : to.body.x;
     const destY = targetAimY !== undefined ? targetAimY : to.body.y - 25;
 
     const projectile = this.add.circle(startX, startY, 6, color);
 
-    // Play shoot sound at launch
     this.playSound('shoot');
 
-    // physics parameters
     const angleRad = Phaser.Math.DegToRad(angleDeg);
-    const baseSpeed = 400; // pixels/s
+    const baseSpeed = 400;
     const vx0 = Math.cos(angleRad) * baseSpeed * powerMult;
-    const vy0 = -Math.sin(angleRad) * baseSpeed * powerMult; // upward negative
-    const gravity = 400; // pixels/s²
+    const vy0 = -Math.sin(angleRad) * baseSpeed * powerMult;
+    const gravity = 400;
     const windFactor = 20;
 
-    // flight time from vertical motion? We'll just animate over 800ms
     const duration = 800;
-    const totalTime = duration / 1000; // seconds
+    const totalTime = duration / 1000;
 
-    // We'll compute position using t from 0 to totalTime, mapping tween progress to time
     const tweenData = { t: 0 };
 
     this.tweens.add({
@@ -636,18 +616,17 @@ export class GameScene extends Phaser.Scene {
       ease: 'Linear',
       onUpdate: () => {
         const t = tweenData.t;
-        const x = startX + vx0 * t + this.wind * t * windFactor; // wind horizontal drift
+        const x = startX + vx0 * t + this.wind * t * windFactor;
         const y = startY + vy0 * t + 0.5 * gravity * t * t;
         projectile.setPosition(x, y);
       },
       onComplete: () => {
         projectile.destroy();
 
-        // check if projectile lands near enemy (simple: distance to destX, destY < 20)
         const landX = startX + vx0 * totalTime + this.wind * totalTime * windFactor;
         const landY = startY + vy0 * totalTime + 0.5 * gravity * totalTime * totalTime;
         const distToTarget = Phaser.Math.Distance.Between(landX, landY, destX, destY);
-        const hit = distToTarget < 30; // hit radius
+        const hit = distToTarget < 30;
 
         if (hit) {
           to.takeDamage(damage);
@@ -680,7 +659,6 @@ export class GameScene extends Phaser.Scene {
           });
         }
 
-        // explosion always at impact point
         const explosionX = landX;
         const explosionY = landY;
         const explosion = this.add.circle(explosionX, explosionY, 6, 0xffff00, 0.6);
@@ -700,7 +678,6 @@ export class GameScene extends Phaser.Scene {
         this.applyGravity(this.player);
         this.applyGravity(this.ai);
 
-        // death animation
         const targetDead = hit && !to.isAlive();
         if (targetDead) {
           to.playDeathAnimation(() => {
@@ -713,13 +690,11 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  // ---- Wind generation -----------------------------------------------------
   private generateWind() {
     this.wind = Phaser.Math.FloatBetween(-3, 3);
     this.windText.setText(`Wind: ${this.wind.toFixed(1)}`);
   }
 
-  // ---- Sound effects (simple Web Audio) ------------------------------------
   private playSound(type: 'shoot' | 'explosion' | 'victory' | 'defeat') {
     try {
       const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -771,7 +746,6 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  // ---- Weapon lookups (unchanged) ------------------------------------------
   private getWeaponDef(id: string): WeaponDef | undefined {
     return this.weaponMap.get(id);
   }
