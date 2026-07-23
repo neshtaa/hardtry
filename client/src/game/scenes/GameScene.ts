@@ -44,7 +44,7 @@ export class GameScene extends Phaser.Scene {
   private spaceHandler: (() => void) | null = null;
 
   // --- movement, aiming, wind ---
-  private moveBudget: number = 60;
+  private moveBudget: number = 10000; // effectively unlimited
   private playerMoved: number = 0;
   private aimAngle: number = 45;          // degrees (0-90)
   private aimPower: number = 1.0;          // multiplier (0.5-1.5)
@@ -260,7 +260,7 @@ export class GameScene extends Phaser.Scene {
     if (x < 0 || x >= 800) return;
     const groundY = this.terrainHeights[x];
     const standY = groundY - 25;
-    if (unit.body.y < standY) unit.setY(standY);
+    unit.setY(standY);
   }
 
   private createOverlay(): void {
@@ -372,6 +372,10 @@ export class GameScene extends Phaser.Scene {
 
     const playerResolved = this.resolveUnitConfig(playerCfg);
     const aiResolved = this.resolveUnitConfig(aiCfg);
+
+    // Force team colors: player green, enemy red
+    playerResolved.color = 0x44ff44;
+    aiResolved.color = 0xff4444;
 
     this.player = new SimpleUnit(this, {
       x: playerCfg.x, y: playerCfg.y,
