@@ -165,28 +165,19 @@ export class GameScene extends Phaser.Scene {
     const startX = this.player.body.x;
     const startY = this.player.body.y - 25;
     const dirX = calculateTargetDirection(startX, this.ai.body.x);
+    const angleRad = (this.aimAngle * Math.PI) / 180;
+    
+    // length scales from 30 (min power) to 90 (max power)
+    const length = 30 + ((this.aimPower - 0.5) / 1.0) * 60;
 
-    const steps = 25;
-    const dt = 0.04;
+    const endX = startX + dirX * Math.cos(angleRad) * length;
+    const endY = startY - Math.sin(angleRad) * length;
 
-    this.aimLineGraphic.lineStyle(1, 0xffff00, 0.6);
-    let t = 0;
-    for (let i = 0; i < steps; i++) {
-      t += dt;
-      const state = getProjectileStateAtTime(
-        {
-          startX,
-          startY,
-          angleDeg: this.aimAngle,
-          powerMult: this.aimPower,
-          dirX,
-          wind: this.wind,
-        },
-        t
-      );
-      this.aimLineGraphic.fillStyle(0xffff00, 0.6);
-      this.aimLineGraphic.fillCircle(state.x, state.y, 2);
-    }
+    this.aimLineGraphic.lineStyle(2, 0xffff00, 0.8);
+    this.aimLineGraphic.beginPath();
+    this.aimLineGraphic.moveTo(startX, startY);
+    this.aimLineGraphic.lineTo(endX, endY);
+    this.aimLineGraphic.strokePath();
   }
 
   private resetState(): void {
@@ -482,11 +473,11 @@ export class GameScene extends Phaser.Scene {
     // charge power
     if (this.spaceKey.isDown && !this.isCharging) {
       this.isCharging = true;
-      this.chargePower = 0.2;
+      this.chargePower = 0.5;
     }
     if (this.isCharging) {
       if (this.spaceKey.isDown) {
-        this.chargePower = Math.min(1.5, this.chargePower + 0.02);
+        this.chargePower = Math.min(1.5, this.chargePower + 0.01);
         this.aimPower = this.chargePower;
         this.updateAimUI();
         this.drawPowerBar();
@@ -495,6 +486,8 @@ export class GameScene extends Phaser.Scene {
         this.isCharging = false;
         this.drawPowerBar();
         this.playerAttack();
+        this.aimPower = 0.5;
+        this.updateAimUI();
       }
     }
   }
@@ -638,7 +631,6 @@ export class GameScene extends Phaser.Scene {
     const startX = from.body.x;
     const startY = from.body.y - 25;
 
-    const projectile = this.add.circle(startX, startY, 6, color);
     this.playSound('shoot');
 
     const weaponType = weaponDef ? weaponDef.weaponType : 'bazooka';
@@ -710,12 +702,10 @@ export class GameScene extends Phaser.Scene {
         if (terrainHit.hit || unitHit || outOfBounds || elapsedSec >= maxFlightSec) {
           if (weaponType === 'grenade' && terrainHit.hit && !unitHit && !hasBounced && elapsedSec < 2.0) {
             // Bounce instead of exploding immediately
-            hasBounced = True
             hasBounced = true;
             bounceTimeOffset = elapsedSec;
             bounceStartX = terrainHit.impactPoint ? terrainHit.impactPoint.x : currentPos.x;
-            bounceStartY = terrainHit.impactPoint ? terrainHit.impactPoint.y : currentPos.y;
-            // modify angle slightly
+            bounceStartY = (terrainHit.impactPoint ? terrainHit.impactPoint.y : currentPos.y) - 2; // lift slightly to avoid immediate collision
             prevPos = { x: currentPos.x, y: currentPos.y };
             return;
           }

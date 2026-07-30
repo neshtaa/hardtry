@@ -28,3 +28,5 @@ Thumbs.db
 /cp ..
 /pip install -r ../backend
 /pytest tests
+.agent/
+prompts/
