@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "type-check": "tsc --noEmit",
+    "test": "npx tsx --test src/game/ballistics.test.ts",
     "start": "electron .",
     "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "build": "vite build && electron-builder",

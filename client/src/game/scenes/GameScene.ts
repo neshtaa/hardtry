@@ -8,6 +8,12 @@ import {
 import { SimpleUnit } from '../SimpleUnit';
 import { TerrainManager } from '../TerrainManager';
 import {
+  getProjectileStateAtTime,
+  calculateAIAim,
+  calculateTargetDirection,
+  checkContinuousTerrainCollision,
+} from '../ballistics';
+import {
   FALLBACK_MISSIONS,
   FALLBACK_WEAPONS,
   FALLBACK_UNIT_CLASSES,
@@ -118,32 +124,32 @@ export class GameScene extends Phaser.Scene {
 
   private redrawAimLine() {
     this.aimLineGraphic.clear();
-    if (!this.player || !this.player.isAlive()) return;
+    if (!this.player || !this.player.isAlive() || !this.ai) return;
 
     const startX = this.player.body.x;
     const startY = this.player.body.y - 25;
+    const dirX = calculateTargetDirection(startX, this.ai.body.x);
 
-    // Use the exact same constants as the actual projectile
-    const angleRad = Phaser.Math.DegToRad(this.aimAngle);
-    const speed = 400 * this.aimPower;
-    const g = 400;
-    const windFactor = 20;
-
-    const vx = Math.cos(angleRad) * speed;
-    const vy = -Math.sin(angleRad) * speed;
-
-    const steps = 20;
+    const steps = 25;
     const dt = 0.04;
 
     this.aimLineGraphic.lineStyle(1, 0xffff00, 0.6);
     let t = 0;
     for (let i = 0; i < steps; i++) {
-      const nextT = t + dt;
-      const x = startX + vx * nextT + this.wind * nextT * windFactor;
-      const y = startY + vy * nextT + 0.5 * g * nextT * nextT;
+      t += dt;
+      const state = getProjectileStateAtTime(
+        {
+          startX,
+          startY,
+          angleDeg: this.aimAngle,
+          powerMult: this.aimPower,
+          dirX,
+          wind: this.wind,
+        },
+        t
+      );
       this.aimLineGraphic.fillStyle(0xffff00, 0.6);
-      this.aimLineGraphic.fillCircle(x, y, 2);
-      t = nextT;
+      this.aimLineGraphic.fillCircle(state.x, state.y, 2);
     }
   }
 
@@ -441,15 +447,13 @@ export class GameScene extends Phaser.Scene {
     };
   }
 
-  private computeAIAim(from: SimpleUnit, to: SimpleUnit): { angle: number; power: number } {
-    const dx = to.body.x - from.body.x;
-    const dy = (from.body.y - 25) - (to.body.y - 25);
-    const baseAngle = Phaser.Math.RadToDeg(Math.atan2(-dy, dx));
-    const clamped = Phaser.Math.Clamp(baseAngle, 5, 85);
-    const skillVariance = Phaser.Math.FloatBetween(-8, 8);
+  private computeAIAim(from: SimpleUnit, to: SimpleUnit): { angle: number; power: number; dirX: number } {
+    const aiAim = calculateAIAim(from.body.x, from.body.y, to.body.x, to.body.y, this.wind);
+    const skillVariance = Phaser.Math.FloatBetween(-4, 4);
     return {
-      angle: Phaser.Math.Clamp(clamped + skillVariance, 5, 85),
-      power: Phaser.Math.FloatBetween(0.9, 1.1),
+      angle: Phaser.Math.Clamp(aiAim.angle + skillVariance, 5, 80),
+      power: Phaser.Math.Clamp(aiAim.power * Phaser.Math.FloatBetween(0.95, 1.05), 0.5, 1.5),
+      dirX: aiAim.dirX,
     };
   }
 
@@ -468,8 +472,9 @@ export class GameScene extends Phaser.Scene {
     const angle = this.aimAngle;
     const power = this.aimPower;
     const damage = this.getWeaponDamage(this.player.weaponId);
+    const dirX = calculateTargetDirection(this.player.body.x, this.ai.body.x);
 
-    this.fireProjectile(this.player, this.ai, damage, angle, power, () => {
+    this.fireProjectile(this.player, this.ai, damage, angle, power, dirX, () => {
       this.playerMoved = 0;
       if (!this.player.isAlive() || !this.ai.isAlive()) {
         this.showResultOverlay(this.player.isAlive());
@@ -507,32 +512,46 @@ export class GameScene extends Phaser.Scene {
       const target = targets[0];
       const damage = this.getWeaponDamage(this.ai.weaponId);
 
-      const { angle, power } = this.computeAIAim(this.ai, target);
+      const { angle, power, dirX } = this.computeAIAim(this.ai, target);
       const aimPoint = this.getAIAimPoint(target);
 
-      this.fireProjectile(this.ai, target, damage, angle, power, () => {
-        if (!this.player.isAlive() || !this.ai.isAlive()) {
-          this.showResultOverlay(this.player.isAlive());
-          return;
-        }
-        this.time.delayedCall(500, () => {
-          this.isPlayerTurn = true;
-          this.isAnimating = false;
-          this.playerMoved = 0;
-          this.generateWind();
-          this.updateAimUI();
-          this.turnText.setText('Player Turn – move arrows, aim up/down, Q/E power, SPACE fire');
-        });
-      }, aimPoint.x, aimPoint.y);
+      this.fireProjectile(
+        this.ai,
+        target,
+        damage,
+        angle,
+        power,
+        dirX,
+        () => {
+          if (!this.player.isAlive() || !this.ai.isAlive()) {
+            this.showResultOverlay(this.player.isAlive());
+            return;
+          }
+          this.time.delayedCall(500, () => {
+            this.isPlayerTurn = true;
+            this.isAnimating = false;
+            this.playerMoved = 0;
+            this.generateWind();
+            this.updateAimUI();
+            this.turnText.setText('Player Turn – move arrows, aim up/down, Q/E power, SPACE fire');
+          });
+        },
+        aimPoint.x,
+        aimPoint.y
+      );
     });
   }
 
   private fireProjectile(
-    from: SimpleUnit, to: SimpleUnit,
+    from: SimpleUnit,
+    to: SimpleUnit,
     damage: number,
-    angleDeg: number, powerMult: number,
+    angleDeg: number,
+    powerMult: number,
+    dirX: number,
     onComplete: () => void,
-    targetAimX?: number, targetAimY?: number,
+    targetAimX?: number,
+    targetAimY?: number
   ) {
     const color = this.getProjectileColor(from.weaponId);
     const weaponDef = this.getWeaponDef(from.weaponId);
@@ -541,47 +560,89 @@ export class GameScene extends Phaser.Scene {
     const startX = from.body.x;
     const startY = from.body.y - 25;
 
-    const destX = targetAimX !== undefined ? targetAimX : to.body.x;
-    const destY = targetAimY !== undefined ? targetAimY : to.body.y - 25;
-
     const projectile = this.add.circle(startX, startY, 6, color);
-
     this.playSound('shoot');
 
-    const angleRad = Phaser.Math.DegToRad(angleDeg);
-    const baseSpeed = 400;
-    const vx0 = Math.cos(angleRad) * baseSpeed * powerMult;
-    const vy0 = -Math.sin(angleRad) * baseSpeed * powerMult;
-    const gravity = 400;
-    const windFactor = 20;
+    const projectileParams = {
+      startX,
+      startY,
+      angleDeg,
+      powerMult,
+      dirX,
+      wind: this.wind,
+    };
 
-    const duration = 800;
-    const totalTime = duration / 1000;
+    let elapsedSec = 0;
+    let prevPos = { x: startX, y: startY };
 
-    const tweenData = { t: 0 };
+    const maxFlightSec = 4.0;
+    const timeStepSec = 0.016;
 
-    this.tweens.add({
-      targets: tweenData,
-      t: totalTime,
-      duration: duration,
-      ease: 'Linear',
-      onUpdate: () => {
-        const t = tweenData.t;
-        const x = startX + vx0 * t + this.wind * t * windFactor;
-        const y = startY + vy0 * t + 0.5 * gravity * t * t;
-        projectile.setPosition(x, y);
-      },
-      onComplete: () => {
-        projectile.destroy();
+    const timer = this.time.addEvent({
+      delay: 16,
+      loop: true,
+      callback: () => {
+        elapsedSec += timeStepSec;
+        const currentPos = getProjectileStateAtTime(projectileParams, elapsedSec);
+        projectile.setPosition(currentPos.x, currentPos.y);
 
-        const landX = startX + vx0 * totalTime + this.wind * totalTime * windFactor;
-        const landY = startY + vy0 * totalTime + 0.5 * gravity * totalTime * totalTime;
-        const distToTarget = Phaser.Math.Distance.Between(landX, landY, destX, destY);
-        const hit = distToTarget < 30;
+        // 1. Continuous Terrain Collision Check
+        const terrainHit = checkContinuousTerrainCollision(
+          prevPos,
+          currentPos,
+          (x) => this.terrainManager.getGroundHeight(x),
+          2
+        );
 
-        if (hit) {
-          to.takeDamage(damage);
-          this.statusText.setText(`${from.name} dealt ${damage} damage`);
+        // 2. Target Hit Check
+        const targetCenterY = targetAimY !== undefined ? targetAimY : to.body.y - 25;
+        const targetCenterX = targetAimX !== undefined ? targetAimX : to.body.x;
+        const distToTarget = Phaser.Math.Distance.Between(
+          currentPos.x,
+          currentPos.y,
+          targetCenterX,
+          targetCenterY
+        );
+        const unitHit = distToTarget < 25;
+
+        // 3. Bounds Check
+        const outOfBounds = currentPos.x < -50 || currentPos.x > 850 || currentPos.y > 650;
+
+        if (terrainHit.hit || unitHit || outOfBounds || elapsedSec >= maxFlightSec) {
+          timer.remove();
+          projectile.destroy();
+
+          const impactX =
+            terrainHit.hit && terrainHit.impactPoint ? terrainHit.impactPoint.x : currentPos.x;
+          const impactY =
+            terrainHit.hit && terrainHit.impactPoint ? terrainHit.impactPoint.y : currentPos.y;
+
+          // Explosion visuals
+          const explosion = this.add.circle(impactX, impactY, 6, 0xffff00, 0.6);
+          this.tweens.add({
+            targets: explosion,
+            scaleX: explosionRadius / 6,
+            scaleY: explosionRadius / 6,
+            alpha: 0,
+            duration: 200,
+            ease: 'Quad.easeOut',
+            onComplete: () => explosion.destroy(),
+          });
+
+          this.playSound('explosion');
+          this.terrainManager.destroyTerrain(impactX, impactY, explosionRadius);
+
+          // Explosion damage check
+          const distToTo = Phaser.Math.Distance.Between(impactX, impactY, to.body.x, to.body.y - 25);
+          const hitTarget = distToTo <= explosionRadius + 15;
+
+          if (hitTarget) {
+            to.takeDamage(damage);
+            this.statusText.setText(`${from.name} dealt ${damage} damage`);
+          } else {
+            this.statusText.setText(`${from.name} missed!`);
+          }
+
           this.statusText.setAlpha(1);
           if (this.damageTween) {
             this.damageTween.stop();
@@ -590,53 +651,28 @@ export class GameScene extends Phaser.Scene {
           this.damageTween = this.tweens.add({
             targets: this.statusText,
             alpha: 0,
-            delay: 1000,
+            delay: 1200,
             duration: 600,
-            onComplete: () => { this.damageTween = null; },
+            onComplete: () => {
+              this.damageTween = null;
+            },
           });
-        } else {
-          this.statusText.setText(`${from.name} missed!`);
-          this.statusText.setAlpha(1);
-          if (this.damageTween) {
-            this.damageTween.stop();
-            this.damageTween = null;
-          }
-          this.damageTween = this.tweens.add({
-            targets: this.statusText,
-            alpha: 0,
-            delay: 1500,
-            duration: 600,
-            onComplete: () => { this.damageTween = null; },
-          });
-        }
 
-        const explosionX = landX;
-        const explosionY = landY;
-        const explosion = this.add.circle(explosionX, explosionY, 6, 0xffff00, 0.6);
-        this.tweens.add({
-          targets: explosion,
-          scaleX: explosionRadius / 6,
-          scaleY: explosionRadius / 6,
-          alpha: 0,
-          duration: 200,
-          ease: 'Quad.easeOut',
-          onComplete: () => explosion.destroy(),
-        });
+          this.applyGravity(this.player);
+          this.applyGravity(this.ai);
 
-        this.playSound('explosion');
-
-        this.terrainManager.destroyTerrain(explosionX, explosionY, explosionRadius);
-        this.applyGravity(this.player);
-        this.applyGravity(this.ai);
-
-        const targetDead = hit && !to.isAlive();
-        if (targetDead) {
-          to.playDeathAnimation(() => {
+          const targetDead = hitTarget && !to.isAlive();
+          if (targetDead) {
+            to.playDeathAnimation(() => {
+              onComplete();
+            });
+          } else {
             onComplete();
-          });
-        } else {
-          onComplete();
+          }
+          return;
         }
+
+        prevPos = { x: currentPos.x, y: currentPos.y };
       },
     });
   }
