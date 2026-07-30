@@ -12,6 +12,7 @@ class SimpleUnit {
   name: string;
   color: number;
   weaponNameText: Phaser.GameObjects.Text;
+  inventory: { weaponId: string; name: string; ammo: number }[];
 
   constructor(scene: Phaser.Scene, config: SimpleUnitConfig) {
     this.scene = scene;
@@ -20,6 +21,7 @@ class SimpleUnit {
     this.weaponId = config.weaponId;
     this.name = config.name;
     this.color = config.color;
+    this.inventory = config.inventory || [];
 
     this.body = scene.add.rectangle(config.x, config.y, 40, 50, this.color);
     this.body.setStrokeStyle(2, 0xffffff);
@@ -61,6 +63,11 @@ class SimpleUnit {
 
   isAlive() {
     return this.hp > 0;
+  }
+
+  setWeapon(weaponId: string, name: string) {
+    this.weaponId = weaponId;
+    this.weaponNameText.setText(name);
   }
 
   setY(y: number) {

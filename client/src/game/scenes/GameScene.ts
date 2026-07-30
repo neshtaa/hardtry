@@ -65,7 +65,14 @@ export class GameScene extends Phaser.Scene {
   private aimUpKey: Phaser.Input.Keyboard.Key | null = null;
   private aimDownKey: Phaser.Input.Keyboard.Key | null = null;
   private powerUpKey: Phaser.Input.Keyboard.Key | null = null;
-  private powerDownKey: Phaser.Input.Keyboard.Key | null = null;
+  private isCharging: boolean = false;
+  private chargePower: number = 0;
+  private powerBarGraphic!: Phaser.GameObjects.Graphics;
+  private inventoryText!: Phaser.GameObjects.Text;
+  private key1!: Phaser.Input.Keyboard.Key;
+  private key2!: Phaser.Input.Keyboard.Key;
+  private key3!: Phaser.Input.Keyboard.Key;
+  private spaceKey!: Phaser.Input.Keyboard.Key;
 
   constructor() {
     super({ key: 'GameScene' });
@@ -107,18 +114,47 @@ export class GameScene extends Phaser.Scene {
 
   private createAimAndWindUI() {
     this.aimLineGraphic = this.add.graphics();
+    this.powerBarGraphic = this.add.graphics();
 
     this.windText = this.add.text(700, 20, 'Wind: 0', {
       fontSize: '14px', color: '#ffffff',
     }).setOrigin(1, 0);
 
-    this.paramText = this.add.text(700, 40, 'Angle: 45°  Pow: 1.0', {
+    this.paramText = this.add.text(700, 40, 'Angle: 45°', {
       fontSize: '14px', color: '#ffffff',
     }).setOrigin(1, 0);
+
+    this.inventoryText = this.add.text(20, 20, '', {
+      fontSize: '14px', color: '#ffff00',
+    });
   }
 
+  private updateInventoryUI() {
+    if (!this.player || !this.player.isAlive()) return;
+    let txt = 'Backpack:\n';
+    this.player.inventory.forEach((item, idx) => {
+      const ammoStr = item.ammo < 0 ? '∞' : item.ammo.toString();
+      const sel = item.weaponId === this.player.weaponId ? '> ' : '  ';
+      txt += `${sel}[${idx + 1}] ${item.name} (${ammoStr})\n`;
+    });
+    this.inventoryText.setText(txt);
+  }
+  
+  private drawPowerBar() {
+    this.powerBarGraphic.clear();
+    if (!this.isCharging || !this.player || !this.player.isAlive()) return;
+    const x = this.player.body.x - 30;
+    const y = this.player.body.y - 70;
+    this.powerBarGraphic.fillStyle(0x333333);
+    this.powerBarGraphic.fillRect(x, y, 60, 8);
+    const ratio = (this.chargePower - 0.5) / 1.0; // 0.5 to 1.5
+    this.powerBarGraphic.fillStyle(0xffa500);
+    this.powerBarGraphic.fillRect(x, y, 60 * Math.max(0, ratio), 8);
+  }
+
+
   private updateAimUI() {
-    this.paramText.setText(`Angle: ${this.aimAngle}°  Pow: ${this.aimPower.toFixed(1)}`);
+    this.paramText.setText(`Angle: ${this.aimAngle}°`);
     this.redrawAimLine();
   }
 
@@ -162,7 +198,9 @@ export class GameScene extends Phaser.Scene {
     this.damageTween = null;
     this.playerMoved = 0;
     this.aimAngle = 45;
-    this.aimPower = 1.0;
+    this.aimPower = 0.5;
+    this.isCharging = false;
+    this.chargePower = 0.5;
     this.wind = 0;
 
     this.overlayContainer = undefined as unknown as Phaser.GameObjects.Container;
@@ -318,8 +356,12 @@ export class GameScene extends Phaser.Scene {
 
     const weaponDef = this.weaponMap.get(weaponId);
     const weaponName = weaponDef ? weaponDef.name : weaponId;
+    const inventory = archetype.allowedWeaponIds.map(wid => {
+      const w = this.weaponMap.get(wid);
+      return { weaponId: wid, name: w ? w.name : wid, ammo: w && w.ammo !== undefined ? w.ammo : -1 };
+    });
 
-    return { hp, weaponId, color, weaponName };
+    return { hp, weaponId, color, weaponName, inventory };
   }
 
   private setupGameObjects(): void {
@@ -344,6 +386,7 @@ export class GameScene extends Phaser.Scene {
       color: playerResolved.color,
       name: 'Player',
       weaponName: playerResolved.weaponName,
+      inventory: playerResolved.inventory
     });
 
     this.ai = new SimpleUnit(this, {
@@ -353,6 +396,7 @@ export class GameScene extends Phaser.Scene {
       color: aiResolved.color,
       name: 'AI',
       weaponName: aiResolved.weaponName,
+      inventory: aiResolved.inventory
     });
 
     const playerGround = this.terrainManager.getGroundHeight(playerCfg.x);
@@ -397,16 +441,13 @@ export class GameScene extends Phaser.Scene {
 
     this.aimUpKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.UP);
     this.aimDownKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.DOWN);
-    this.powerUpKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.Q);
-    this.powerDownKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.E);
+    this.key1 = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ONE);
+    this.key2 = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.TWO);
+    this.key3 = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.THREE);
+    this.spaceKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
 
-    this.spaceHandler = () => {
-      if (this.isPlayerTurn && !this.isAnimating && this.player.isAlive()) {
-        this.playerAttack();
-      }
-    };
-    this.input.keyboard!.on('keydown-SPACE', this.spaceHandler);
-    this.turnText.setText('Player Turn – move arrows, aim up/down, Q/E power, SPACE fire');
+    this.updateInventoryUI();
+    this.turnText.setText('Player Turn – move, aim up/down, 1-3 weapon, Hold SPACE fire');
   }
 
   update() {
@@ -417,20 +458,44 @@ export class GameScene extends Phaser.Scene {
     if (Phaser.Input.Keyboard.JustDown(this.aimUpKey!)) {
       this.aimAngle = Math.min(90, this.aimAngle + 3);
       this.updateAimUI();
+            this.updateInventoryUI();
     }
     if (Phaser.Input.Keyboard.JustDown(this.aimDownKey!)) {
       this.aimAngle = Math.max(0, this.aimAngle - 3);
       this.updateAimUI();
     }
 
-    // power
-    if (Phaser.Input.Keyboard.JustDown(this.powerUpKey!)) {
-      this.aimPower = Math.min(1.5, this.aimPower + 0.1);
-      this.updateAimUI();
+    // weapon selection
+    const checkWeaponKey = (key: Phaser.Input.Keyboard.Key, index: number) => {
+      if (Phaser.Input.Keyboard.JustDown(key)) {
+        const item = this.player.inventory[index];
+        if (item && item.ammo !== 0) {
+          this.player.setWeapon(item.weaponId, item.name);
+          this.updateInventoryUI();
+        }
+      }
+    };
+    checkWeaponKey(this.key1, 0);
+    checkWeaponKey(this.key2, 1);
+    checkWeaponKey(this.key3, 2);
+
+    // charge power
+    if (this.spaceKey.isDown && !this.isCharging) {
+      this.isCharging = true;
+      this.chargePower = 0.2;
     }
-    if (Phaser.Input.Keyboard.JustDown(this.powerDownKey!)) {
-      this.aimPower = Math.max(0.5, this.aimPower - 0.1);
-      this.updateAimUI();
+    if (this.isCharging) {
+      if (this.spaceKey.isDown) {
+        this.chargePower = Math.min(1.5, this.chargePower + 0.02);
+        this.aimPower = this.chargePower;
+        this.updateAimUI();
+        this.drawPowerBar();
+      } else {
+        // Released
+        this.isCharging = false;
+        this.drawPowerBar();
+        this.playerAttack();
+      }
     }
   }
 
@@ -471,6 +536,11 @@ export class GameScene extends Phaser.Scene {
 
     const angle = this.aimAngle;
     const power = this.aimPower;
+    const item = this.player.inventory.find(i => i.weaponId === this.player.weaponId);
+    if (item && item.ammo > 0) {
+      item.ammo--;
+      this.updateInventoryUI();
+    }
     const damage = this.getWeaponDamage(this.player.weaponId);
     const dirX = calculateTargetDirection(this.player.body.x, this.ai.body.x);
 
@@ -504,6 +574,12 @@ export class GameScene extends Phaser.Scene {
     this.applyGravity(this.ai);
 
     this.time.delayedCall(800, () => {
+            // Ensure AI has ammo for current weapon, else switch
+      const aiItem = this.ai.inventory.find(i => i.weaponId === this.ai.weaponId);
+      if (aiItem && aiItem.ammo === 0) {
+        const alt = this.ai.inventory.find(i => i.ammo !== 0);
+        if (alt) this.ai.setWeapon(alt.weaponId, alt.name);
+      }
       const targets = this.getAITargets();
       if (targets.length === 0) {
         this.showResultOverlay(true);
@@ -511,6 +587,8 @@ export class GameScene extends Phaser.Scene {
       }
       const target = targets[0];
       const damage = this.getWeaponDamage(this.ai.weaponId);
+      const item = this.ai.inventory.find(i => i.weaponId === this.ai.weaponId);
+      if (item && item.ammo > 0) item.ammo--;
 
       const { angle, power, dirX } = this.computeAIAim(this.ai, target);
       const aimPoint = this.getAIAimPoint(target);
@@ -563,28 +641,49 @@ export class GameScene extends Phaser.Scene {
     const projectile = this.add.circle(startX, startY, 6, color);
     this.playSound('shoot');
 
-    const projectileParams = {
-      startX,
-      startY,
-      angleDeg,
-      powerMult,
-      dirX,
-      wind: this.wind,
-    };
+    const weaponType = weaponDef ? weaponDef.weaponType : 'bazooka';
+    const numProjectiles = weaponType === 'shotgun' ? 3 : 1;
+    let projectilesActive = numProjectiles;
+    let spreadAngles = [0];
+    if (numProjectiles === 3) spreadAngles = [-8, 0, 8];
 
-    let elapsedSec = 0;
-    let prevPos = { x: startX, y: startY };
+    spreadAngles.forEach((angleOffset) => {
+      const projAngle = Phaser.Math.Clamp(angleDeg + angleOffset * dirX, 0, 180);
+      const projectileParams = {
+        startX,
+        startY,
+        angleDeg: projAngle,
+        powerMult,
+        dirX,
+        wind: weaponType === 'grenade' ? this.wind * 0.5 : this.wind,
+      };
 
-    const maxFlightSec = 4.0;
-    const timeStepSec = 0.016;
+      const proj = this.add.circle(startX, startY, 4, color);
+      let elapsedSec = 0;
+      let prevPos = { x: startX, y: startY };
+      const maxFlightSec = 4.0;
+      const timeStepSec = 0.016;
+      let hasBounced = false;
+      let bounceTimeOffset = 0;
+      let bounceStartX = startX;
+      let bounceStartY = startY;
 
-    const timer = this.time.addEvent({
-      delay: 16,
-      loop: true,
+      const timer = this.time.addEvent({
+        delay: 16,
+        loop: true,
       callback: () => {
         elapsedSec += timeStepSec;
-        const currentPos = getProjectileStateAtTime(projectileParams, elapsedSec);
-        projectile.setPosition(currentPos.x, currentPos.y);
+        let currentPos = getProjectileStateAtTime(projectileParams, elapsedSec - bounceTimeOffset);
+        if (hasBounced) {
+           currentPos = getProjectileStateAtTime({
+             ...projectileParams,
+             startX: bounceStartX,
+             startY: bounceStartY,
+             powerMult: powerMult * 0.4,
+             angleDeg: projAngle,
+           }, elapsedSec - bounceTimeOffset);
+        }
+        proj.setPosition(currentPos.x, currentPos.y);
 
         // 1. Continuous Terrain Collision Check
         const terrainHit = checkContinuousTerrainCollision(
@@ -609,8 +708,20 @@ export class GameScene extends Phaser.Scene {
         const outOfBounds = currentPos.x < -50 || currentPos.x > 850 || currentPos.y > 650;
 
         if (terrainHit.hit || unitHit || outOfBounds || elapsedSec >= maxFlightSec) {
+          if (weaponType === 'grenade' && terrainHit.hit && !unitHit && !hasBounced && elapsedSec < 2.0) {
+            // Bounce instead of exploding immediately
+            hasBounced = True
+            hasBounced = true;
+            bounceTimeOffset = elapsedSec;
+            bounceStartX = terrainHit.impactPoint ? terrainHit.impactPoint.x : currentPos.x;
+            bounceStartY = terrainHit.impactPoint ? terrainHit.impactPoint.y : currentPos.y;
+            // modify angle slightly
+            prevPos = { x: currentPos.x, y: currentPos.y };
+            return;
+          }
+
           timer.remove();
-          projectile.destroy();
+          proj.destroy();
 
           const impactX =
             terrainHit.hit && terrainHit.impactPoint ? terrainHit.impactPoint.x : currentPos.x;
@@ -661,13 +772,14 @@ export class GameScene extends Phaser.Scene {
           this.applyGravity(this.player);
           this.applyGravity(this.ai);
 
+          projectilesActive--;
           const targetDead = hitTarget && !to.isAlive();
           if (targetDead) {
             to.playDeathAnimation(() => {
-              onComplete();
+              if (projectilesActive === 0) onComplete();
             });
           } else {
-            onComplete();
+            if (projectilesActive === 0) onComplete();
           }
           return;
         }
@@ -675,6 +787,7 @@ export class GameScene extends Phaser.Scene {
         prevPos = { x: currentPos.x, y: currentPos.y };
       },
     });
+    }); // end spreadAngles.forEach
   }
 
   private generateWind() {

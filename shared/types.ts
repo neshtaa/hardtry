@@ -5,6 +5,8 @@ export interface WeaponDef {
   range: number;
   projectileColor: string;
   explosionRadius: number;
+  weaponType?: 'bazooka' | 'grenade' | 'shotgun';
+  ammo?: number;
 }
 
 export interface UnitClassDef {
@@ -41,5 +43,12 @@ export interface SimpleUnitConfig {
   color: number;
   name: string;
   weaponName: string;
+  inventory?: InventoryItem[];
+}
+
+export interface InventoryItem {
+  weaponId: string;
+  name: string;
+  ammo: number;
 }
 
