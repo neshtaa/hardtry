@@ -9,8 +9,7 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "outDir": "./dist",
-    "rootDir": "./src",
     "types": ["vite/client"]
   },
-  "include": ["src"]
+  "include": ["src", "../shared/**/*"]
 }

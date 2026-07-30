@@ -5,6 +5,7 @@
   "main": "src/main.ts",
   "scripts": {
     "dev": "vite",
+    "type-check": "tsc --noEmit",
     "start": "electron .",
     "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "build": "vite build && electron-builder",

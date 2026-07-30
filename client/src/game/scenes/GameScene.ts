@@ -6,6 +6,7 @@ import {
   MissionDef,
 } from '../types';
 import { SimpleUnit } from '../SimpleUnit';
+import { TerrainManager } from '../TerrainManager';
 import {
   FALLBACK_MISSIONS,
   FALLBACK_WEAPONS,
@@ -27,8 +28,7 @@ export class GameScene extends Phaser.Scene {
   private missionList: MissionDef[] = [];
   private currentMissionIndex: number = 0;
   private mission!: MissionDef;
-  private terrainHeights!: number[];
-  private terrainGraphics!: Phaser.GameObjects.Graphics;
+  private terrainManager!: TerrainManager;
   private missionNameText!: Phaser.GameObjects.Text;
 
   // Overlay containers (for start and result)
@@ -69,7 +69,7 @@ export class GameScene extends Phaser.Scene {
     this.resetState();
     this.input.keyboard!.removeAllListeners();
     this.events.once('shutdown', () => {
-      this.input.keyboard!.removeAllListeners(true);
+      this.input.keyboard!.removeAllListeners();
     });
 
     const requestedIndex = data?.missionIndex ?? 0;
@@ -89,9 +89,10 @@ export class GameScene extends Phaser.Scene {
     this.currentMissionIndex = Phaser.Math.Clamp(requestedIndex, 0, this.missionList.length - 1);
     this.mission = this.missionList[this.currentMissionIndex];
 
-    this.initTerrain();
+    this.terrainManager = new TerrainManager(this);
+    this.terrainManager.init();
     this.children.removeAll(true);
-    this.buildTerrain();
+    this.terrainManager.build();
     this.createOverlay();
     this.setupGameObjects();
     this.createAimAndWindUI();
@@ -208,57 +209,10 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private initTerrain(): void {
-    this.terrainHeights = new Array(800);
-    for (let x = 0; x < 800; x++) {
-      let h = 450;
-      if (x >= 200 && x < 400) {
-        if (x <= 300) h = 450 - ((x - 200) / 100) * 70;
-        else h = 450 - ((400 - x) / 100) * 70;
-      }
-      if (x >= 400 && x <= 600) {
-        if (x <= 500) h = 450 - ((x - 400) / 100) * 70;
-        else h = 450 - ((600 - x) / 100) * 70;
-      }
-      this.terrainHeights[x] = Math.max(0, Math.min(600, h));
-    }
-  }
-
-  private buildTerrain(): void {
-    this.terrainGraphics = this.add.graphics();
-    this.redrawTerrain();
-  }
-
-  private redrawTerrain(): void {
-    this.terrainGraphics.clear();
-    this.terrainGraphics.fillStyle(0x446644);
-    for (let x = 0; x < 800; x++) {
-      const h = this.terrainHeights[x];
-      this.terrainGraphics.fillRect(x, h, 1, 600 - h);
-    }
-  }
-
-  private destroyTerrain(cx: number, cy: number, radius: number = 30): void {
-    const minX = Math.max(0, Math.floor(cx - radius));
-    const maxX = Math.min(799, Math.ceil(cx + radius));
-    for (let x = minX; x <= maxX; x++) {
-      const dx = x - cx;
-      const dy = this.terrainHeights[x] - cy;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < radius) {
-        const craterY = cy + Math.sqrt(radius * radius - dx * dx);
-        if (craterY > this.terrainHeights[x]) {
-          this.terrainHeights[x] = Math.min(600, craterY);
-        }
-      }
-    }
-    this.redrawTerrain();
-  }
-
   private applyGravity(unit: SimpleUnit): void {
     const x = Math.round(unit.body.x);
     if (x < 0 || x >= 800) return;
-    const groundY = this.terrainHeights[x];
+    const groundY = this.terrainManager.getGroundHeight(x);
     const standY = groundY - 25;
     unit.setY(standY);
   }
@@ -395,8 +349,8 @@ export class GameScene extends Phaser.Scene {
       weaponName: aiResolved.weaponName,
     });
 
-    const playerGround = this.terrainHeights[Math.round(playerCfg.x)];
-    const aiGround = this.terrainHeights[Math.round(aiCfg.x)];
+    const playerGround = this.terrainManager.getGroundHeight(playerCfg.x);
+    const aiGround = this.terrainManager.getGroundHeight(aiCfg.x);
     this.player.setY(playerGround - 25);
     this.ai.setY(aiGround - 25);
 
@@ -671,7 +625,7 @@ export class GameScene extends Phaser.Scene {
 
         this.playSound('explosion');
 
-        this.destroyTerrain(explosionX, explosionY, explosionRadius);
+        this.terrainManager.destroyTerrain(explosionX, explosionY, explosionRadius);
         this.applyGravity(this.player);
         this.applyGravity(this.ai);
 

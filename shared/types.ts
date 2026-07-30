@@ -1,37 +1,45 @@
 export interface WeaponDef {
   id: string;
   name: string;
-  type: 'projectile' | 'instant' | 'beam';
   damage: number;
-  radius: number;
-  speed: number;
-  ammo: number;
-  unlockRequirement?: string;
+  range: number;
+  projectileColor: string;
+  explosionRadius: number;
 }
 
-export interface UnitDef {
+export interface UnitClassDef {
   id: string;
   name: string;
-  hp: number;
-  weaponSlots: string[];
-  movementRange: number;
-  abilities?: string[];
+  baseHp: number;
+  allowedWeaponIds: string[];
+  color: string;
+  description: string;
 }
 
-export interface MapDef {
+export interface UnitConfig {
   id: string;
-  name: string;
-  width: number;
-  height: number;
-  terrainSeed?: string; // for procedural generation reference
+  archetypeId?: string;
+  hp?: number;
+  weaponId?: string;
+  x: number;
+  y: number;
+  color?: string;
+  side: 'player' | 'enemy';
 }
 
 export interface MissionDef {
   id: string;
   name: string;
-  mapId: string;
-  enemyUnits: { unitId: string; count: number }[];
-  playerUnitIds: string[];
-  conditions: { type: 'eliminate_all'; target: 'enemy' };
-  rewards: { xp: number; currency: number };
+  units: UnitConfig[];
 }
+
+export interface SimpleUnitConfig {
+  x: number;
+  y: number;
+  hp: number;
+  weaponId: string;
+  color: number;
+  name: string;
+  weaponName: string;
+}
+
